@@ -42,4 +42,38 @@ class EvolutionService:
             response.raise_for_status()
             return response.json()
 
+    async def set_webhook(self, instance_name: str, webhook_url: str):
+        """
+        Configura o destino dos webhooks para uma instância específica.
+        """
+        url = f"{self.base_url}/webhook/set/{instance_name}"
+        payload = {
+            "url": webhook_url,
+            "enabled": True,
+            "events": [
+                "MESSAGES_UPSERT",
+                "MESSAGES_UPDATE"
+            ]
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+
+    async def send_text(self, instance_name: str, remote_jid: str, text: str):
+        """
+        Envia uma mensagem de texto para um contato específico.
+        """
+        url = f"{self.base_url}/message/sendText/{instance_name}"
+        payload = {
+            "number": remote_jid,
+            "text": text,
+            "delay": 1200, # Delay natural em ms
+            "linkPreview": True
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, headers=self.headers)
+            response.raise_for_status()
+            return response.json()
+
 evolution_service = EvolutionService()

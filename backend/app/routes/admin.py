@@ -24,9 +24,14 @@ async def register_pharmacy(data: PharmacyRegistration):
     # 2. Provisionar Instância na Evolution Go usando o CNPJ
     try:
         evolution_res = await evolution_service.create_instance(data.cnpj)
+        
+        # 3. Configurar Webhook Automaticamente
+        webhook_url = f"{settings.PUBLIC_URL}/webhooks/whatsapp"
+        await evolution_service.set_webhook(data.cnpj, webhook_url)
+        
         return {
             "status": "success",
-            "message": "Pharmacy registered and instance provisioned",
+            "message": "Pharmacy registered, instance provisioned and webhook configured",
             "evolution_data": evolution_res
         }
     except Exception as e:

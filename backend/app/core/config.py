@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Motor de Plantão IA"
     DEBUG: bool = False
     PORT: int = 8000
+    PUBLIC_URL: str = "https://your-public-url.com" # Importante para Webhooks
 
     # Supabase (Obrigatórios)
     SUPABASE_URL: str
