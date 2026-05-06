@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: Motor de Plantão IA API
+  description: API para gerenciamento de plantões de farmácias com IA e automação via Evolution Go.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000
+    description: Servidor de Desenvolvimento
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+paths:
+  /webhooks/payment:
+    post:
+      summary: Recebe notificações de pagamento do marketplace
+      tags: [Webhooks]
+      responses:
+        200:
+          description: Pagamento processado e usuário criado
+        400:
+          description: Assinatura de webhook inválida
+
+  /admin/pharmacy/registration:
+    post:
+      summary: Finaliza o cadastro da farmácia e provisiona instância Evolution
+      security:
+        - bearerAuth: []
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cnpj, name, city_id, address]
+              properties:
+                cnpj: { type: string, pattern: '^\d{14}$' }
+                name: { type: string }
+                city_id: { type: string, format: uuid }
+                address: { type: string }
+      responses:
+        201:
+          description: Cadastro salvo e instância criada
+        409:
+          description: CNPJ já cadastrado
+
+  /admin/instance/qrcode:
+    get:
+      summary: Retorna o QR Code base64 para conexão com WhatsApp
+      security:
+        - bearerAuth: []
+      tags: [Admin]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qrcode_base64: { type: string }
+                  status: { type: string }
+
+  /ai/chat/webhook:
+    post:
+      summary: Webhook recebido da Evolution API para processamento via IA
+      tags: [AI Agent]
+      responses:
+        200:
+          description: Mensagem processada
