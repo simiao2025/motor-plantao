@@ -4,49 +4,38 @@
 
 **Goal:** Build a multi-tenant SaaS platform for automated pharmacy duty direction via WhatsApp using Python, FastAPI, and Supabase.
 
-**Architecture:** Spec-Driven (SDD) with FastAPI backend, LangChain agents, and Next.js 15.
+---
 
-**Specs Reference:**
-- API: `docs/specs/openapi.yaml`
-- DB: `docs/specs/database_spec.md`
-- Flows: `docs/specs/flow_spec.md`
+## Phase 0-3: Infrastructure & Backend (COMPLETED)
+- [x] Task 0: Specs (API, DB, Flow)
+- [x] Task 1: Project Initialization & Quality
+- [x] Task 2: Core Security & Config
+- [x] Task 3: Supabase Schema
+- [x] Task 4: Evolution API Service & Registration Logic
+- [x] Task 5: AI Agent & Supabase Service
 
 ---
 
-## Phase 0: Specifications (COMPLETED)
-- [x] Task 0.1: OpenAPI Spec
-- [x] Task 0.2: Database Spec
-- [x] Task 0.3: Flow Spec
+## Phase 4: Frontend Implementation & Integration
 
----
-
-## Phase 1: Foundation, Security & Database
-
-### Task 1: Project Initialization & Quality Setup
+### Task 6: Pharmacy Registration Form
 **Files:**
-- Modify: `backend/requirements.txt`
-- Create: `pyproject.toml` (Ruff config)
-- Create: `.env.example`
-- Create: `docker-compose.yml`
+- Create: `frontend/src/app/register/page.tsx`
+- Create: `frontend/src/services/api.ts`
 
-**Step 1: Configure Ruff for Code Purity**
-**Step 2: Setup Docker Compose with Postgres/Redis local (for tests)**
+**Step 1: Create Axios/Fetch instance for Backend API**
+**Step 2: Build the multi-step registration form (CNPJ focus)**
 
-### Task 2: Core Config & Security Middleware
+### Task 7: WhatsApp Connection Center (QR Code)
 **Files:**
-- Create: `backend/app/core/config.py`
-- Create: `backend/app/core/security.py`
+- Create: `frontend/src/app/dashboard/settings/page.tsx`
+- Create: `frontend/src/components/QRCodeDisplay.tsx`
 
-**Step 1: Implement Hard-fail Env Validation with Pydantic Settings**
-**Step 2: Implement JWT & Rate Limiting base**
+**Step 1: Implement QR Code fetching from Backend**
+**Step 2: Implement connection status monitor**
 
-### Task 3: Supabase Schema Implementation
+### Task 8: Duty Schedule Management
 **Files:**
-- Create: `supabase/migrations/20260506000000_initial_schema.sql`
+- Create: `frontend/src/app/dashboard/schedule/page.tsx`
 
-**Step 1: Apply SQL based on `database_spec.md`**
-
----
-
-## Phase 2: SaaS & Provisioning Logic
-(Subsequent tasks follow...)
+**Step 1: Build a calendar-based interface for duty selection**

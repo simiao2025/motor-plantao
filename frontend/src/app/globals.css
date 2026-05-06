@@ -43,3 +43,15 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+@keyframes scan {
+  0% { top: 0; }
+  100% { top: 100%; }
+}
+
+.animate-scan {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  animation: scan 2s linear infinite;
+}

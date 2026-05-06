@@ -32,3 +32,15 @@ async def register_pharmacy(data: PharmacyRegistration):
     except Exception as e:
         logging.error(f"Erro ao provisionar instância: {str(e)}")
         raise HTTPException(status_code=500, detail="Error provisioning WhatsApp instance")
+
+@router.get("/instance/qrcode")
+async def get_instance_qrcode(instance_name: str = "45123456000189"): # Placeholder - Deve vir do contexto do usuário logado
+    """
+    Retorna o QR Code base64 para conexão.
+    """
+    try:
+        qr_data = await evolution_service.get_qrcode(instance_name)
+        return qr_data
+    except Exception as e:
+        logging.error(f"Erro ao buscar QR Code: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error fetching QR Code from Evolution API")
