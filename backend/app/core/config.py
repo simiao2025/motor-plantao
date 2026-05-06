@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     EVOLUTION_GLOBAL_API_KEY: SecretStr
 
     # AI Config
-    OPENAI_API_KEY: SecretStr
+    LLM_PROVIDER: str = "openai" # "openai" ou "groq"
+    LLM_MODEL: str = "gpt-4o"
+    OPENAI_API_KEY: SecretStr = Field(default=None)
+    GROQ_API_KEY: SecretStr = Field(default=None)
 
     # Security
     SECRET_KEY: SecretStr
