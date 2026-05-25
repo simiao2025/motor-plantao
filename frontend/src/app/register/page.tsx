@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { pharmacyApi } from "@/services/api";
 import { Building2, MapPin, Hash, ArrowRight, Loader2 } from "lucide-react";
+import { Spotlight } from "@/components/ui/spotlight";
 
 export default function Register() {
   const router = useRouter();
@@ -12,7 +13,7 @@ export default function Register() {
   const [formData, setFormData] = useState({
     cnpj: "",
     name: "",
-    city_id: "7b1373e2-8b65-424b-b0b3-f0a9a4b3b2b1", // Placeholder - ID de uma cidade real no Supabase
+    city_id: "7b1373e2-8b65-424b-b0b3-f0a9a4b3b2b1",
     address: "",
   });
 
@@ -32,17 +33,19 @@ export default function Register() {
   };
 
   return (
-    <main className="min-h-screen bg-dark flex items-center justify-center p-4 relative overflow-hidden">
+    <main className="min-h-screen bg-bg flex items-center justify-center p-4 relative overflow-hidden bg-grid-white/[0.02]">
+      <Spotlight className="-top-40 left-0 md:left-60 md:-top-20" fill="#f43f5e" />
+      
       {/* Background Glows */}
-      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-emerald-500/10 blur-[120px] rounded-full"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full"></div>
+      <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-rose-500/10 blur-[120px] rounded-full"></div>
+      <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-500/10 blur-[120px] rounded-full"></div>
 
-      <div className="w-full max-w-xl glass p-8 md:p-12 rounded-[2.5rem] space-y-8 relative z-10">
+      <div className="w-full max-w-xl glass-window p-8 md:p-12 rounded-[2.5rem] space-y-8 relative z-10 border border-white/5 bg-black/40 backdrop-blur-xl">
         <div className="text-center space-y-2">
-          <h1 className="text-4xl font-black text-white font-outfit uppercase tracking-tighter">
-            Configurar <span className="text-emerald-500">Farmácia</span>
+          <h1 className="text-4xl font-black text-white font-heading uppercase tracking-tighter">
+            Configurar <span className="text-gradient-medical">Farmácia</span>
           </h1>
-          <p className="text-slate-400">Complete os dados para ativar sua IA de plantão.</p>
+          <p className="text-muted">Complete os dados para ativar sua IA de plantão.</p>
         </div>
 
         {error && (
@@ -58,28 +61,28 @@ export default function Register() {
               placeholder="00.000.000/0000-00" 
               icon={<Hash className="w-5 h-5" />}
               value={formData.cnpj}
-              onChange={(v) => setFormData({...formData, cnpj: v.replace(/\D/g, "")})}
+              onChange={(v: string) => setFormData({...formData, cnpj: v.replace(/\D/g, "")})}
             />
             <InputField 
               label="Nome Comercial" 
               placeholder="Ex: Farmácia São João" 
               icon={<Building2 className="w-5 h-5" />}
               value={formData.name}
-              onChange={(v) => setFormData({...formData, name: v})}
+              onChange={(v: string) => setFormData({...formData, name: v})}
             />
             <InputField 
               label="Endereço Completo" 
               placeholder="Rua, Número, Bairro" 
               icon={<MapPin className="w-5 h-5" />}
               value={formData.address}
-              onChange={(v) => setFormData({...formData, address: v})}
+              onChange={(v: string) => setFormData({...formData, address: v})}
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-900 text-dark font-black rounded-2xl transition-all flex items-center justify-center gap-2 group shadow-lg shadow-emerald-500/20"
+            className="w-full py-4 bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 disabled:opacity-50 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-2 group shadow-lg shadow-rose-500/20"
           >
             {loading ? (
               <Loader2 className="w-6 h-6 animate-spin" />
@@ -96,12 +99,20 @@ export default function Register() {
   );
 }
 
-function InputField({ label, placeholder, icon, value, onChange }: any) {
+interface InputFieldProps {
+  label: string;
+  placeholder: string;
+  icon: React.ReactNode;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function InputField({ label, placeholder, icon, value, onChange }: InputFieldProps) {
   return (
     <div className="space-y-2">
-      <label className="text-xs font-bold text-slate-500 uppercase ml-2">{label}</label>
+      <label className="text-xs font-bold text-muted uppercase ml-2">{label}</label>
       <div className="relative group">
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-emerald-500 transition-colors">
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-rose-500 transition-colors">
           {icon}
         </div>
         <input
@@ -109,7 +120,7 @@ function InputField({ label, placeholder, icon, value, onChange }: any) {
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-emerald-500/50 focus:bg-white/10 transition-all"
+          className="w-full bg-s2 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-rose-500/50 focus:bg-white/5 transition-all"
           required
         />
       </div>

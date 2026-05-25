@@ -1,0 +1,20 @@
+# Ambientes Virtuais e Dependências
+node_modules/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Arquivos de Ambiente (Segredos)
+.env
+.env.*
+!.env.example
+
+# Next.js
+.next/
+out/
+build/
+
+# Outros
+.DS_Store
+*.log

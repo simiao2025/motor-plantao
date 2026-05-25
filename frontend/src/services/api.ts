@@ -20,6 +20,10 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}) {
 }
 
 export const pharmacyApi = {
+  login: async (data: any) => {
+    // Mock login para testes de UI
+    return new Promise(resolve => setTimeout(() => resolve({ status: "success" }), 1000));
+  },
   register: (data: { cnpj: string; name: string; city_id: string; address: string }) => 
     apiFetch("/admin/pharmacy/registration", {
       method: "POST",
