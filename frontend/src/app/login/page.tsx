@@ -64,16 +64,16 @@ function LoginContent() {
       try {
         const profile = await pharmacyApi.getProfile();
         
-        if (profile && profile.profile_completed === false) {
-          // Bloqueia entrada no painel e envia para Onboarding comercial
+        if (!profile || Object.keys(profile).length === 0 || profile.profile_completed === false) {
+          // Perfil vazio ou incompleto → envia para Onboarding comercial
           router.push("/onboarding/perfil");
         } else {
           // Acesso livre ao painel
           router.push("/dashboard");
         }
-      } catch (profileErr) {
+      } catch (profileErr: any) {
         console.error("Erro ao verificar onboarding:", profileErr);
-        // Fallback: Redireciona para onboarding caso haja erro
+        // Se der 401 ou qualquer erro de perfil, é usuário novo → onboarding
         router.push("/onboarding/perfil");
       }
     } catch (err: any) {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { pharmacyApi } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 import { Spotlight } from "@/components/ui/spotlight";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -58,6 +59,14 @@ export default function OnboardingPerfil() {
   useEffect(() => {
     async function loadPreFill() {
       try {
+        // Aguarda a sessão estar disponível antes de chamar a API
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData?.session) {
+          // Sem sessão ativa — redireciona para o login
+          router.push("/login");
+          return;
+        }
+        
         const prefill = await pharmacyApi.getPreFillData();
         if (prefill) {
           setFormData((prev) => ({
@@ -74,7 +83,7 @@ export default function OnboardingPerfil() {
       }
     }
     loadPreFill();
-  }, []);
+  }, [router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
