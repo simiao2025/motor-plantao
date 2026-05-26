@@ -3,10 +3,23 @@ import logging
 from app.core.config import settings
 from app.services.evolution_service import evolution_service
 from app.services.supabase_service import supabase_service
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        user_res = supabase_service.client.auth.get_user(token)
+        if not user_res or not user_res.user:
+            raise HTTPException(status_code=401, detail="Token inválido ou expirado")
+        return user_res.user.id
+    except Exception as e:
+        logging.error(f"Erro ao validar token JWT: {str(e)}")
+        raise HTTPException(status_code=401, detail="Acesso não autorizado")
 
 class PharmacyRegistration(BaseModel):
     cnpj: str
@@ -22,19 +35,17 @@ class PharmacyRegistration(BaseModel):
     state: str
 
 @router.post("/pharmacy/finalize-onboarding")
-async def finalize_onboarding(data: PharmacyRegistration):
+async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends(get_current_user)):
     """
     Recebe dados do perfil, cria instância no Evolution e salva no banco.
     """
     try:
         logging.info(f"Finalizando onboarding para CNPJ: {data.cnpj}")
 
-        # 1. Identificar a farmácia pendente
+        # 1. Identificar a farmácia pendente do usuário atual
         res = supabase_service.client.table("pharmacies") \
             .select("id") \
-            .eq("profile_completed", False) \
-            .order("created_at", desc=True) \
-            .limit(1) \
+            .eq("owner_id", user_id) \
             .execute()
 
         if not res.data:
@@ -95,16 +106,15 @@ async def finalize_onboarding(data: PharmacyRegistration):
         raise HTTPException(status_code=500, detail="Erro interno do servidor.")
 
 @router.get("/pharmacy/pre-fill")
-async def get_pre_fill_data():
+async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
     """
     Busca os dados básicos da farmácia pendente para preencher o formulário.
     """
     try:
-        # Busca a farmácia mais recente que ainda não completou o perfil
+        # Busca a farmácia do usuário
         res = supabase_service.client.table("pharmacies") \
             .select("nome_responsavel, email, razao_social") \
-            .eq("profile_completed", False) \
-            .order("created_at", desc=True) \
+            .eq("owner_id", user_id) \
             .limit(1) \
             .execute()
 
@@ -217,12 +227,12 @@ class PharmacyProfile(BaseModel):
     nome_responsavel: str = None
 
 @router.get("/pharmacy/profile")
-async def get_profile():
-    return await supabase_service.get_pharmacy_profile()
+async def get_profile(user_id: str = Depends(get_current_user)):
+    return await supabase_service.get_pharmacy_profile(user_id)
 
 @router.put("/pharmacy/profile")
-async def update_profile(data: PharmacyProfile):
-    res = await supabase_service.update_pharmacy_profile(data.dict())
+async def update_profile(data: PharmacyProfile, user_id: str = Depends(get_current_user)):
+    res = await supabase_service.update_pharmacy_profile(data.dict(), user_id)
     if not res: raise HTTPException(status_code=500, detail="Erro ao salvar perfil")
     return res
 

@@ -246,17 +246,17 @@ class SupabaseService:
             return None
 
     # --- PERFIL DA FARMÁCIA ---
-    async def get_pharmacy_profile(self):
+    async def get_pharmacy_profile(self, user_id: str):
         try:
-            pharm = self.client.table("pharmacies").select("name, razao_social, cnpj, address, neighborhood, cep, state, phone, email, nome_responsavel, profile_completed").limit(1).execute()
+            pharm = self.client.table("pharmacies").select("name, razao_social, cnpj, address, neighborhood, cep, state, phone, email, nome_responsavel, profile_completed").eq("owner_id", user_id).limit(1).execute()
             return pharm.data[0] if pharm.data else {}
         except Exception as e:
             logging.error(f"Erro ao buscar perfil: {str(e)}")
             return {}
 
-    async def update_pharmacy_profile(self, data: dict):
+    async def update_pharmacy_profile(self, data: dict, user_id: str):
         try:
-            pharm = self.client.table("pharmacies").select("id").limit(1).execute()
+            pharm = self.client.table("pharmacies").select("id").eq("owner_id", user_id).limit(1).execute()
             if not pharm.data: return None
             pharmacy_id = pharm.data[0]["id"]
             
