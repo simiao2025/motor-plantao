@@ -8,10 +8,18 @@ from supabase import Client, create_client
 
 class SupabaseService:
     def __init__(self):
-        self.client: Client = create_client(
-            settings.SUPABASE_URL,
-            settings.SUPABASE_SERVICE_ROLE_KEY.get_secret_value()
-        )
+        self._client: Client = None
+
+    @property
+    def client(self) -> Client:
+        if self._client is None:
+            url = settings.SUPABASE_URL
+            key = settings.SUPABASE_SERVICE_ROLE_KEY.get_secret_value() if settings.SUPABASE_SERVICE_ROLE_KEY else ""
+            if not url or not key:
+                logging.error("Supabase credentials missing! Please configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
+                raise ValueError("Supabase credentials missing. Check environment variables.")
+            self._client = create_client(url, key)
+        return self._client
 
     async def create_pharmacy_onboarding(self, name: str, email: str):
         """

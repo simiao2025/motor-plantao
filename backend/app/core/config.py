@@ -11,14 +11,14 @@ class Settings(BaseSettings):
     PUBLIC_URL: str = "https://your-public-url.com" # Importante para Webhooks
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
-    # Supabase (Obrigatórios)
-    SUPABASE_URL: str
-    SUPABASE_ANON_KEY: SecretStr
-    SUPABASE_SERVICE_ROLE_KEY: SecretStr
+    # Supabase (Obrigatórios com fallback para iniciar no Vercel)
+    SUPABASE_URL: str = ""
+    SUPABASE_ANON_KEY: SecretStr = SecretStr("")
+    SUPABASE_SERVICE_ROLE_KEY: SecretStr = SecretStr("")
 
-    # Evolution API (Obrigatórios)
-    EVOLUTION_API_URL: str
-    EVOLUTION_GLOBAL_API_KEY: SecretStr
+    # Evolution API (Obrigatórios com fallback)
+    EVOLUTION_API_URL: str = ""
+    EVOLUTION_GLOBAL_API_KEY: SecretStr = SecretStr("")
 
     # AI Config
     LLM_PROVIDER: str = "openai" # "openai" ou "groq"
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
 
     # Security
-    SECRET_KEY: SecretStr
+    SECRET_KEY: SecretStr = SecretStr("abcslirm-secret-key-2026")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
