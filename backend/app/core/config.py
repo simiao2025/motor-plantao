@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Email / Resend
     RESEND_API_KEY: str = ""
-    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+    RESEND_FROM_EMAIL: str = Field("onboarding@resend.dev", validation_alias="EMAIL_FROM")
 
     # Security
     SECRET_KEY: SecretStr = SecretStr("abcslirm-secret-key-2026")
