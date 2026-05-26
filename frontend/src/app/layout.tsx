@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title: "Motor de Plantão - Painel Admin",
   description: "Gerenciamento inteligente de escalas de plantão para farmácias.",
   icons: {
-    icon: "/icon.png",
-    apple: "/icon.png",
+    icon: "/icons-farmacia.png",
+    apple: "/icons-farmacia.png",
   },
 };
 
