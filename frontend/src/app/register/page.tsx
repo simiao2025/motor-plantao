@@ -82,6 +82,11 @@ export default function Register() {
 
       <div className="w-full max-w-md glass-window p-8 md:p-12 rounded-[2.5rem] space-y-8 relative z-10 border border-white/5 bg-black/40 backdrop-blur-xl">
         <div className="text-center space-y-2">
+          <img 
+            src="/icons-farmacia.png" 
+            alt="Motor Plantão Logo" 
+            className="w-24 h-24 mx-auto mb-6 object-contain drop-shadow-[0_0_20px_rgba(244,63,94,0.2)] animate-pulse"
+          />
           <h1 className="text-4xl font-black text-white font-heading uppercase tracking-tighter">
             Criar <span className="text-gradient-medical">Conta</span>
           </h1>
