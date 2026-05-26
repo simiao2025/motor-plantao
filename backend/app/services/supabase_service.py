@@ -418,7 +418,7 @@ class SupabaseService:
                 "name": name,
                 "razao_social": name,
                 "nome_responsavel": name,
-                "cnpj": f"T-PEND-{secrets.token_hex(4).upper()}",
+                "cnpj": f"T-PEND-{secrets.token_hex(3).upper()}",
                 "address": "Aguardando preenchimento comercial",
                 "city_id": default_city_id,
                 "owner_id": user_id,

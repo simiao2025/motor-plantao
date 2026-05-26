@@ -161,7 +161,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
                     "name": "",                  # Em branco para o usuário preencher
                     "razao_social": "",          # Em branco para o usuário preencher
                     "nome_responsavel": responsible_name,  # Nome cadastrado = Nome do Responsável!
-                    "cnpj": f"T-PEND-{secrets.token_hex(4).upper()}",
+                    "cnpj": f"T-PEND-{secrets.token_hex(3).upper()}",
                     "address": "Aguardando preenchimento comercial",
                     "city_id": default_city_id,
                     "owner_id": user_id,
