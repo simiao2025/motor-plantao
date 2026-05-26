@@ -2,12 +2,31 @@ import { supabase } from "@/lib/supabase";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+async function getAuthToken(): Promise<string | undefined> {
+  // 1. Tenta pegar a sessão imediatamente
+  let { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData?.session?.access_token) {
+    return sessionData.session.access_token;
+  }
+
+  // 2. Se for null, pode ser que o Supabase ainda esteja inicializando (lendo do localStorage)
+  // Fazemos uma pequena espera/polamento de até 1 segundo (5x 200ms)
+  for (let i = 0; i < 5; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const { data: retryData } = await supabase.auth.getSession();
+    if (retryData?.session?.access_token) {
+      return retryData.session.access_token;
+    }
+  }
+
+  return undefined;
+}
+
 export async function apiFetch(endpoint: string, options: RequestInit = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
   
-  // Buscar token da sessão atual
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData?.session?.access_token;
+  // Buscar token da sessão atual com tratamento de condição de corrida (retry)
+  const token = await getAuthToken();
   
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

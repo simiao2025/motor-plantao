@@ -59,10 +59,19 @@ export default function OnboardingPerfil() {
   useEffect(() => {
     async function loadPreFill() {
       try {
-        // Aguarda a sessão estar disponível antes de chamar a API
-        const { data: sessionData } = await supabase.auth.getSession();
-        if (!sessionData?.session) {
-          // Sem sessão ativa — redireciona para o login
+        // Aguarda a sessão estar disponível com retries para evitar race condition na inicialização do Supabase
+        let session = null;
+        for (let i = 0; i < 5; i++) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            session = sessionData.session;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+
+        if (!session) {
+          // Sem sessão ativa após retentativas — redireciona para o login
           router.push("/login");
           return;
         }
