@@ -22,6 +22,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Acesso não autorizado")
 
 class PharmacyRegistration(BaseModel):
+    name: str
     cnpj: str
     razao_social: str
     nome_responsavel: str
@@ -113,7 +114,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
     try:
         # Busca a farmácia do usuário
         res = supabase_service.client.table("pharmacies") \
-            .select("nome_responsavel, email, razao_social") \
+            .select("name, nome_responsavel, email, razao_social") \
             .eq("owner_id", user_id) \
             .limit(1) \
             .execute()
@@ -121,6 +122,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
         if res.data:
             data = res.data[0]
             return {
+                "name": data.get("name"),
                 "nome_responsavel": data.get("nome_responsavel") or data.get("razao_social"),
                 "email": data.get("email")
             }
@@ -156,6 +158,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
                 logging.error(f"Erro de banco durante auto-reparação: {str(db_e)}")
 
             return {
+                "name": name,
                 "nome_responsavel": name,
                 "email": email
             }

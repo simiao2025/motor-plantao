@@ -17,7 +17,8 @@ import {
   Mail, 
   Hash, 
   CheckCircle2, 
-  Smartphone 
+  Smartphone,
+  Store
 } from "lucide-react";
 
 const container = {
@@ -42,6 +43,7 @@ export default function OnboardingPerfil() {
   const [error, setError] = useState("");
 
   const [formData, setFormData] = useState({
+    name: "",
     cnpj: "",
     razao_social: "",
     nome_responsavel: "",
@@ -80,9 +82,10 @@ export default function OnboardingPerfil() {
         if (prefill) {
           setFormData((prev) => ({
             ...prev,
+            name: prefill.name || "",
             nome_responsavel: prefill.nome_responsavel || "",
             email: prefill.email || "",
-            razao_social: prefill.nome_responsavel || "", // Fallback
+            razao_social: prefill.name || prefill.nome_responsavel || "", // Fallback
           }));
         }
       } catch (err) {
@@ -192,16 +195,34 @@ export default function OnboardingPerfil() {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase ml-2 block mb-2">Nome Fantasia (Comercial)</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          name="name"
+                          value={formData.name}
+                          onChange={handleChange}
+                          className="w-full bg-s2 border border-white/10 rounded-2xl py-3.5 pl-10 pr-4 text-white focus:outline-none focus:border-rose-500/50 focus:bg-white/5 transition-all text-sm"
+                          placeholder="Ex: Farmácia Popular"
+                          required
+                        />
+                        <Store className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      </div>
+                    </div>
+                    <div>
                       <label className="text-xs font-bold text-slate-400 uppercase ml-2 block mb-2">Razão Social</label>
-                      <input
-                        type="text"
-                        name="razao_social"
-                        value={formData.razao_social}
-                        onChange={handleChange}
-                        className="w-full bg-s2 border border-white/10 rounded-2xl py-3.5 px-4 text-white focus:outline-none focus:border-rose-500/50 focus:bg-white/5 transition-all text-sm"
-                        placeholder="Ex: Ramos Comercial Farmacêutica Ltda"
-                        required
-                      />
+                      <div className="relative">
+                        <input
+                          type="text"
+                          name="razao_social"
+                          value={formData.razao_social}
+                          onChange={handleChange}
+                          className="w-full bg-s2 border border-white/10 rounded-2xl py-3.5 pl-10 pr-4 text-white focus:outline-none focus:border-rose-500/50 focus:bg-white/5 transition-all text-sm"
+                          placeholder="Ex: Ramos Comercial Farmacêutica Ltda"
+                          required
+                        />
+                        <Building2 className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      </div>
                     </div>
                     <div>
                       <label className="text-xs font-bold text-slate-400 uppercase ml-2 block mb-2">CNPJ Comercial</label>

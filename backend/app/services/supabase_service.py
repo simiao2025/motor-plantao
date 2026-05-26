@@ -206,6 +206,7 @@ class SupabaseService:
         """
         try:
             res = self.client.table("pharmacies").update({
+                "name": data.get("name"),
                 "cnpj": data.get("cnpj"),
                 "razao_social": data.get("razao_social"),
                 "address": data.get("address"),
