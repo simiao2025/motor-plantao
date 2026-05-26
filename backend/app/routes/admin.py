@@ -118,14 +118,49 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
             .limit(1) \
             .execute()
 
-        if not res.data:
-            return {}
+        if res.data:
+            data = res.data[0]
+            return {
+                "nome_responsavel": data.get("nome_responsavel") or data.get("razao_social"),
+                "email": data.get("email")
+            }
 
-        data = res.data[0]
-        return {
-            "nome_responsavel": data.get("nome_responsavel") or data.get("razao_social"),
-            "email": data.get("email")
-        }
+        # Fallback de Autoreparação: se a farmácia provisória não foi criada no registro (ex. race condition),
+        # recuperamos os dados diretamente do Auth do Supabase e criamos o registro pendente sob demanda.
+        logging.warning(f"Nenhuma farmácia provisória encontrada para o owner {user_id}. Executando auto-reparação...")
+        user_res = supabase_service.client.auth.admin.get_user_by_id(user_id)
+        if user_res and user_res.user:
+            name = user_res.user.user_metadata.get("name") or user_res.user.email.split("@")[0]
+            email = user_res.user.email
+            
+            try:
+                # 1. Buscar cidade padrão
+                city_res = supabase_service.client.table("cities").select("id").limit(1).execute()
+                default_city_id = city_res.data[0]["id"] if city_res.data else None
+                
+                import secrets
+                # 2. Inserir farmácia pendente
+                supabase_service.client.table("pharmacies").insert({
+                    "name": name,
+                    "razao_social": name,
+                    "nome_responsavel": name,
+                    "cnpj": f"T-PEND-{secrets.token_hex(4).upper()}",
+                    "address": "Aguardando preenchimento comercial",
+                    "city_id": default_city_id,
+                    "owner_id": user_id,
+                    "email": email,
+                    "profile_completed": False
+                }).execute()
+                logging.info(f"Auto-reparação concluída: Farmácia provisória criada para o owner {user_id}")
+            except Exception as db_e:
+                logging.error(f"Erro de banco durante auto-reparação: {str(db_e)}")
+
+            return {
+                "nome_responsavel": name,
+                "email": email
+            }
+
+        return {}
     except Exception as e:
         logging.error(f"Erro ao buscar dados de preenchimento: {str(e)}")
         return {}
