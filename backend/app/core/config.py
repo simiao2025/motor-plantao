@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr = Field(default=None)
     GROQ_API_KEY: SecretStr = Field(default=None)
 
+    # Email / Resend
+    RESEND_API_KEY: str = None
+    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+
     # Security
     SECRET_KEY: SecretStr
     JWT_ALGORITHM: str = "HS256"

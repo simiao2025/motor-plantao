@@ -165,3 +165,202 @@ async def get_clients():
     except Exception as e:
         logging.error(f"Erro ao buscar clientes: {str(e)}")
         raise HTTPException(status_code=500, detail="Erro ao buscar clientes")
+
+class ShiftData(BaseModel):
+    shift_date: str
+
+@router.get("/shifts")
+async def list_shifts():
+    return await supabase_service.get_pharmacy_shifts()
+
+@router.post("/shifts")
+async def create_shift(data: ShiftData):
+    res = await supabase_service.add_pharmacy_shift(data.shift_date)
+    if not res:
+        raise HTTPException(status_code=500, detail="Erro ao adicionar plantão")
+    return res
+
+@router.delete("/shifts/{shift_id}")
+async def remove_shift(shift_id: str):
+    res = await supabase_service.delete_pharmacy_shift(shift_id)
+    return {"status": "success", "deleted": res}
+
+class AISettings(BaseModel):
+    system_prompt: str = None
+    rag_base: str = None
+    auto_response: bool = True
+    whatsapp_channel: str = "evolution"
+    meta_token: str = None
+    meta_phone_number_id: str = None
+    meta_waba_id: str = None
+
+@router.get("/pharmacy/settings")
+async def get_settings():
+    return await supabase_service.get_pharmacy_settings()
+
+@router.put("/pharmacy/settings")
+async def update_settings(data: AISettings):
+    res = await supabase_service.update_pharmacy_settings(data.dict())
+    if not res: raise HTTPException(status_code=500, detail="Erro ao salvar configs")
+    return res
+
+class PharmacyProfile(BaseModel):
+    name: str = None
+    razao_social: str = None
+    cnpj: str = None
+    address: str = None
+    neighborhood: str = None
+    cep: str = None
+    state: str = None
+    phone: str = None
+    email: str = None
+    nome_responsavel: str = None
+
+@router.get("/pharmacy/profile")
+async def get_profile():
+    return await supabase_service.get_pharmacy_profile()
+
+@router.put("/pharmacy/profile")
+async def update_profile(data: PharmacyProfile):
+    res = await supabase_service.update_pharmacy_profile(data.dict())
+    if not res: raise HTTPException(status_code=500, detail="Erro ao salvar perfil")
+    return res
+
+class PasswordData(BaseModel):
+    new_password: str
+
+@router.post("/security/change-password")
+async def change_password(data: PasswordData):
+    res = await supabase_service.update_user_password(data.new_password)
+    if not res: raise HTTPException(status_code=500, detail="Erro ao alterar senha")
+    return {"status": "success"}
+
+# --- CADASTRO MANUAL & VERIFICAÇÃO DE E-MAIL ---
+class RegisterData(BaseModel):
+    name: str
+    email: str
+    password: str
+
+@router.post("/auth/register")
+async def register_manual(data: RegisterData):
+    """
+    Cadastra provisoriamente o usuário e envia e-mail de confirmação via Resend.
+    """
+    import secrets
+    from app.services.email_service import email_service
+    try:
+        # 1. Gerar token seguro
+        token = secrets.token_urlsafe(32)
+        
+        # 2. Salvar dados provisórios
+        res = await supabase_service.save_pending_confirmation(
+            name=data.name,
+            email=data.email,
+            password_plain=data.password,
+            token=token
+        )
+        if not res:
+            raise HTTPException(status_code=500, detail="Erro ao processar dados de registro.")
+            
+        # 3. Disparar e-mail de ativação via Resend
+        email_sent = await email_service.send_verification_email(
+            email=data.email,
+            name=data.name,
+            token=token
+        )
+        if not email_sent:
+            # Não falha o fluxo inteiro, mas avisa
+            logging.warning(f"Resend não conseguiu enviar e-mail para {data.email}")
+            
+        return {
+            "status": "success",
+            "message": "Registro iniciado. E-mail de confirmação disparado!"
+        }
+    except Exception as e:
+        logging.error(f"Erro no cadastro manual: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erro interno ao registrar.")
+
+@router.get("/auth/confirm-email")
+async def confirm_email(token: str):
+    """
+    Link clicado pelo usuário no e-mail. Cria o usuário real no Supabase Auth e a farmácia pendente.
+    """
+    from fastapi.responses import RedirectResponse
+    try:
+        # 1. Buscar token
+        pending = await supabase_service.get_pending_confirmation_by_token(token)
+        if not pending:
+            return RedirectResponse(url="http://localhost:3000/login?error=token_invalid")
+            
+        # 2. Criar usuário e farmácia
+        user_id = await supabase_service.create_user_after_confirmation(
+            name=pending["name"],
+            email=pending["email"],
+            password_plain=pending["password"]
+        )
+        if not user_id:
+            return RedirectResponse(url="http://localhost:3000/login?error=auth_failed")
+            
+        # 3. Limpar pendência
+        await supabase_service.delete_pending_confirmation(pending["email"])
+        
+        # 4. Redirecionar para login do frontend
+        return RedirectResponse(url="http://localhost:3000/login?confirmed=true")
+    except Exception as e:
+        logging.error(f"Erro na confirmação de e-mail: {str(e)}")
+        return RedirectResponse(url="http://localhost:3000/login?error=unknown")
+
+# --- GERENCIAMENTO DE MEMBROS E ACESSO (RBAC) ---
+class UserCreateData(BaseModel):
+    name: str
+    email: str
+    password: str
+    role: str # 'owner' | 'manager' | 'salesperson'
+
+class UserPasswordData(BaseModel):
+    new_password: str
+
+@router.get("/users")
+async def list_team_members():
+    """
+    Retorna a lista de todos os usuários/balconistas da farmácia ativa
+    """
+    return await supabase_service.list_pharmacy_users()
+
+@router.post("/users")
+async def add_team_member(data: UserCreateData):
+    """
+    Cria um novo funcionário (Supabase Auth + public.pharmacy_users)
+    """
+    res = await supabase_service.add_pharmacy_user(
+        name=data.name,
+        email=data.email,
+        password_plain=data.password,
+        role=data.role
+    )
+    if not res:
+        raise HTTPException(status_code=500, detail="Erro ao criar funcionário no servidor.")
+    return res
+
+@router.delete("/users/{member_id}")
+async def remove_team_member(member_id: str):
+    """
+    Remove o funcionário e exclui sua conta de acesso
+    """
+    success = await supabase_service.delete_pharmacy_user(member_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Erro ao remover funcionário do servidor.")
+    return {"status": "success", "message": "Funcionário excluído."}
+
+@router.post("/users/{member_id}/change-password")
+async def change_member_password(member_id: str, data: UserPasswordData):
+    """
+    Altera de forma administrativa a senha de login do balconista/gerente
+    """
+    success = await supabase_service.update_pharmacy_user_password(member_id, data.new_password)
+    if not success:
+        raise HTTPException(status_code=500, detail="Erro ao alterar senha do funcionário.")
+    return {"status": "success", "message": "Senha do funcionário atualizada."}
+
+
+

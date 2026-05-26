@@ -15,6 +15,10 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: "Motor de Plantão - Painel Admin",
   description: "Gerenciamento inteligente de escalas de plantão para farmácias.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({
