@@ -13,3 +13,4 @@ ruff
 httpx
 python-jose[cryptography]
 passlib[bcrypt]
+slowapi
