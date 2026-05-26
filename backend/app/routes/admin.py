@@ -43,35 +43,13 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
     try:
         logging.info(f"Finalizando onboarding para CNPJ: {data.cnpj}")
 
-        # 1. Identificar a farmácia pendente do usuário atual
+        # 1. Identificar se a farmácia já existe para o usuário atual
         res = supabase_service.client.table("pharmacies") \
             .select("id") \
             .eq("owner_id", user_id) \
             .execute()
 
-        if not res.data:
-            # Fallback: Se não achar pendente, tenta pelo nome
-            res = supabase_service.client.table("pharmacies") \
-                .select("id") \
-                .eq("name", data.name) \
-                .execute()
-
-        if not res.data:
-            raise HTTPException(status_code=404, detail="Farmácia não encontrada para finalização.")
-
-        pharmacy_id = res.data[0]["id"]
-
-        # 2. Criar Instância na Evolution
-        evo_res = await evolution_service.create_instance(data.cnpj)
-
-        if evo_res.get("status") == "error":
-            raise HTTPException(status_code=500, detail=f"Erro na Evolution: {evo_res.get('message')}")
-
-        # 3. Configurar Webhook Automaticamente
-        webhook_url = f"{settings.PUBLIC_URL}/webhooks/whatsapp"
-        await evolution_service.set_webhook(data.cnpj, webhook_url)
-
-        # 4. Tratar Cidade (Busca ou Cria)
+        # 2. Tratar Cidade (Busca ou Cria)
         slug = data.city_name.lower().replace(" ", "-")
         city_res = supabase_service.client.table("cities").select("id").eq("slug", slug).execute()
 
@@ -86,7 +64,35 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
             }).execute()
             city_id = new_city.data[0]["id"]
 
-        # 5. Finalizar no Supabase
+        # 3. Determinar o ID da farmácia (busca existente ou cria na hora)
+        if res.data:
+            pharmacy_id = res.data[0]["id"]
+        else:
+            logging.warning(f"Farmácia não encontrada no onboarding para o owner {user_id}. Criando registro sob demanda...")
+            new_pharmacy = supabase_service.client.table("pharmacies").insert({
+                "owner_id": user_id,
+                "name": data.name,
+                "cnpj": data.cnpj,
+                "razao_social": data.razao_social,
+                "address": data.address,
+                "city_id": city_id
+            }).execute()
+            
+            if not new_pharmacy.data:
+                raise HTTPException(status_code=500, detail="Não foi possível criar o registro da farmácia no banco.")
+            pharmacy_id = new_pharmacy.data[0]["id"]
+
+        # 4. Criar Instância na Evolution
+        evo_res = await evolution_service.create_instance(data.cnpj)
+
+        if evo_res.get("status") == "error":
+            raise HTTPException(status_code=500, detail=f"Erro na Evolution: {evo_res.get('message')}")
+
+        # 5. Configurar Webhook Automaticamente
+        webhook_url = f"{settings.PUBLIC_URL}/webhooks/whatsapp"
+        await evolution_service.set_webhook(data.cnpj, webhook_url)
+
+        # 6. Finalizar no Supabase
         final_data = data.dict()
         final_data["city_id"] = city_id # Converte nome em ID para o banco
         final_data["instance_name"] = data.cnpj
@@ -104,7 +110,7 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
         raise he
     except Exception as e:
         logging.error(f"Erro inesperado no finalize_onboarding: {str(e)}")
-        raise HTTPException(status_code=500, detail="Erro interno do servidor.")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao finalizar onboarding: {str(e)}")
 
 @router.get("/pharmacy/pre-fill")
 async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
@@ -136,9 +142,17 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
             email = user_res.user.email
             
             try:
-                # 1. Buscar cidade padrão
+                # 1. Buscar cidade padrão ou criar uma padrão caso a tabela esteja vazia
                 city_res = supabase_service.client.table("cities").select("id").limit(1).execute()
-                default_city_id = city_res.data[0]["id"] if city_res.data else None
+                if city_res.data:
+                    default_city_id = city_res.data[0]["id"]
+                else:
+                    new_city = supabase_service.client.table("cities").insert({
+                        "name": "São Paulo",
+                        "state": "SP",
+                        "slug": "sao-paulo"
+                    }).execute()
+                    default_city_id = new_city.data[0]["id"] if new_city.data else None
                 
                 import secrets
                 # 2. Inserir farmácia pendente
