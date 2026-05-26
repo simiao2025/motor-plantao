@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "Motor de Plantão IA"
     DEBUG: bool = False
     PORT: int = 8000
-    PUBLIC_URL: str = "https://your-public-url.com" # Importante para Webhooks
+    PUBLIC_URL: str = "https://motor-plantao-backend.vercel.app"
+    FRONTEND_URL: str = "https://motorplantao.brasilonthebox.shop"
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://motorplantao.brasilonthebox.shop"
 
     # Supabase (Obrigatórios com fallback para iniciar no Vercel)

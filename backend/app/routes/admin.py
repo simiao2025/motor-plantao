@@ -290,7 +290,7 @@ async def confirm_email(token: str):
         # 1. Buscar token
         pending = await supabase_service.get_pending_confirmation_by_token(token)
         if not pending:
-            return RedirectResponse(url="http://localhost:3000/login?error=token_invalid")
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=token_invalid")
             
         # 2. Criar usuário e farmácia
         user_id = await supabase_service.create_user_after_confirmation(
@@ -299,16 +299,16 @@ async def confirm_email(token: str):
             password_plain=pending["password"]
         )
         if not user_id:
-            return RedirectResponse(url="http://localhost:3000/login?error=auth_failed")
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=auth_failed")
             
         # 3. Limpar pendência
         await supabase_service.delete_pending_confirmation(pending["email"])
         
         # 4. Redirecionar para login do frontend
-        return RedirectResponse(url="http://localhost:3000/login?confirmed=true")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?confirmed=true")
     except Exception as e:
         logging.error(f"Erro na confirmação de e-mail: {str(e)}")
-        return RedirectResponse(url="http://localhost:3000/login?error=unknown")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=unknown")
 
 # --- GERENCIAMENTO DE MEMBROS E ACESSO (RBAC) ---
 class UserCreateData(BaseModel):
