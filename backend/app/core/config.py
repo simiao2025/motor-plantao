@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     PORT: int = 8000
     PUBLIC_URL: str = "https://your-public-url.com" # Importante para Webhooks
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,https://motorplantao.brasilonthebox.shop"
 
     # Supabase (Obrigatórios com fallback para iniciar no Vercel)
     SUPABASE_URL: str = ""
