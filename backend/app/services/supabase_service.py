@@ -18,8 +18,30 @@ class SupabaseService:
             if not url or not key:
                 logging.error("Supabase credentials missing! Please configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
                 raise ValueError("Supabase credentials missing. Check environment variables.")
-            self._client = create_client(url, key)
         return self._client
+
+    async def get_user_pharmacy_id(self, user_id: str) -> str:
+        """
+        Retorna o ID da farmácia associada a um usuário do Supabase Auth.
+        O usuário pode ser o dono (owner_id) da farmácia ou um membro da equipe (pharmacy_users).
+        """
+        try:
+            # 1. Verifica se é dono (owner_id)
+            res = self.client.table("pharmacies").select("id").eq("owner_id", user_id).limit(1).execute()
+            if res.data:
+                return res.data[0]["id"]
+            
+            # 2. Verifica se é membro da equipe (pharmacy_users)
+            res = self.client.table("pharmacy_users").select("pharmacy_id").eq("user_id", user_id).limit(1).execute()
+            if res.data:
+                return res.data[0]["pharmacy_id"]
+            
+            return None
+        except Exception as e:
+            logging.error(f"Erro ao buscar farmácia do usuário {user_id}: {str(e)}")
+            return None
+
+
 
     async def create_pharmacy_onboarding(self, name: str, email: str):
         """
@@ -74,10 +96,18 @@ class SupabaseService:
         res = self.client.table("pharmacies").select("id").eq("instance_name", instance_name).execute()
         return res.data[0]["id"] if res.data else None
 
-    async def get_dashboard_stats(self):
+    async def get_dashboard_stats(self, user_id: str):
         try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id:
+                return {
+                    "total_triagens": 0,
+                    "criticos": 0,
+                    "verdes": 0,
+                    "pacientes_unicos": 0
+                }
             today = date.today().isoformat()
-            res = self.client.table("ai_context_logs").select("id, triage_level, user_phone").gte("created_at", today).execute()
+            res = self.client.table("ai_context_logs").select("id, triage_level, user_phone").eq("pharmacy_id", pharmacy_id).gte("created_at", today).execute()
             
             logs = res.data
             total_triagens = len(logs)
@@ -100,17 +130,21 @@ class SupabaseService:
                 "pacientes_unicos": 0
             }
 
-    async def get_recent_triages(self, limit: int = 5):
+    async def get_recent_triages(self, user_id: str, limit: int = 5):
         try:
-            res = self.client.table("ai_context_logs").select("*").order("created_at", desc=True).limit(limit).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return []
+            res = self.client.table("ai_context_logs").select("*").eq("pharmacy_id", pharmacy_id).order("created_at", desc=True).limit(limit).execute()
             return res.data
         except Exception as e:
             logging.error(f"Erro ao buscar triagens recentes (fallback vazio): {str(e)}")
             return []
 
-    async def get_historical_triages(self):
+    async def get_historical_triages(self, user_id: str):
         try:
-            res = self.client.table("ai_context_logs").select("created_at, triage_level").order("created_at", desc=True).limit(1000).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return []
+            res = self.client.table("ai_context_logs").select("created_at, triage_level").eq("pharmacy_id", pharmacy_id).order("created_at", desc=True).limit(1000).execute()
             history = {}
             for item in res.data:
                 date_str = item.get("created_at")[:10]
@@ -122,6 +156,17 @@ class SupabaseService:
             return sorted(list(history.values()), key=lambda x: x["date"])
         except Exception as e:
             logging.error(f"Erro ao buscar histórico de triagens (fallback vazio): {str(e)}")
+            return []
+
+    async def get_unique_clients(self, user_id: str):
+        try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return []
+            res = self.client.table("ai_context_logs").select("user_phone").eq("pharmacy_id", pharmacy_id).execute()
+            if not res.data: return []
+            return list(set(item["user_phone"] for item in res.data if item.get("user_phone")))
+        except Exception as e:
+            logging.error(f"Erro ao buscar clientes únicos: {str(e)}")
             return []
 
     async def log_context(self, pharmacy_id: str, content: str, response: str, user_phone: str = None, triage_level: str = "VERDE", resolved: bool = True):
@@ -182,20 +227,19 @@ class SupabaseService:
             logging.error(f"Erro ao finalizar onboarding no Supabase: {str(e)}")
             return None
 
-    async def get_pharmacy_shifts(self):
+    async def get_pharmacy_shifts(self, user_id: str):
         try:
-            res = self.client.table("pharmacy_shifts").select("*").order("shift_date", desc=False).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return []
+            res = self.client.table("pharmacy_shifts").select("*").eq("pharmacy_id", pharmacy_id).order("shift_date", desc=False).execute()
             return res.data
         except Exception as e:
             logging.error(f"Erro ao buscar plantões: {str(e)}")
             return []
 
-    async def add_pharmacy_shift(self, shift_date: str):
+    async def add_pharmacy_shift(self, shift_date: str, user_id: str):
         try:
-            # Pega a primeira farmácia como padrão pro MVP
-            pharm = self.client.table("pharmacies").select("id").limit(1).execute()
-            pharmacy_id = pharm.data[0]["id"] if pharm.data else None
-            
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id:
                 return None
 
@@ -208,28 +252,32 @@ class SupabaseService:
             logging.error(f"Erro ao adicionar plantão: {str(e)}")
             return None
 
-    async def delete_pharmacy_shift(self, shift_id: str):
+    async def delete_pharmacy_shift(self, shift_id: str, user_id: str):
         try:
-            res = self.client.table("pharmacy_shifts").delete().eq("id", shift_id).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return None
+            res = self.client.table("pharmacy_shifts").delete().eq("id", shift_id).eq("pharmacy_id", pharmacy_id).execute()
             return res.data
         except Exception as e:
             logging.error(f"Erro ao deletar plantão: {str(e)}")
             return None
+            return None
 
     # --- CONFIGURAÇÕES DE IA ---
-    async def get_pharmacy_settings(self):
+    async def get_pharmacy_settings(self, user_id: str):
         try:
-            pharm = self.client.table("pharmacies").select("system_prompt, rag_base, auto_response, whatsapp_channel, meta_token, meta_phone_number_id, meta_waba_id").limit(1).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return {}
+            pharm = self.client.table("pharmacies").select("system_prompt, rag_base, auto_response, whatsapp_channel, meta_token, meta_phone_number_id, meta_waba_id").eq("id", pharmacy_id).limit(1).execute()
             return pharm.data[0] if pharm.data else {}
         except Exception as e:
             logging.error(f"Erro ao buscar configurações: {str(e)}")
             return {}
 
-    async def update_pharmacy_settings(self, data: dict):
+    async def update_pharmacy_settings(self, data: dict, user_id: str):
         try:
-            pharm = self.client.table("pharmacies").select("id").limit(1).execute()
-            if not pharm.data: return None
-            pharmacy_id = pharm.data[0]["id"]
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return None
             
             res = self.client.table("pharmacies").update({
                 "system_prompt": data.get("system_prompt"),
@@ -278,12 +326,8 @@ class SupabaseService:
             return None
 
     # --- SEGURANÇA ---
-    async def update_user_password(self, new_password: str):
+    async def update_user_password(self, new_password: str, user_id: str):
         try:
-            users = self.client.auth.admin.list_users()
-            if not users: return False
-            user_id = users[0].id
-            
             res = self.client.auth.admin.update_user_by_id(user_id, {"password": new_password})
             return True if res else False
         except Exception as e:
@@ -405,12 +449,10 @@ class SupabaseService:
             return None
 
     # --- MEMBROS DA EQUIPE (RBAC) ---
-    async def list_pharmacy_users(self):
+    async def list_pharmacy_users(self, user_id: str):
         try:
-            # Busca a farmácia ativa
-            pharm = self.client.table("pharmacies").select("id").limit(1).execute()
-            if not pharm.data: return []
-            pharmacy_id = pharm.data[0]["id"]
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return []
             
             res = self.client.table("pharmacy_users").select("*").eq("pharmacy_id", pharmacy_id).order("created_at", desc=False).execute()
             return res.data
@@ -418,12 +460,10 @@ class SupabaseService:
             logging.error(f"Erro ao listar membros da equipe: {str(e)}")
             return []
 
-    async def add_pharmacy_user(self, name: str, email: str, password_plain: str, role: str):
+    async def add_pharmacy_user(self, name: str, email: str, password_plain: str, role: str, user_id: str):
         try:
-            # Busca a farmácia ativa
-            pharm = self.client.table("pharmacies").select("id").limit(1).execute()
-            if not pharm.data: return None
-            pharmacy_id = pharm.data[0]["id"]
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return None
             
             # 1. Criar no Supabase Auth com metadata de perfil
             user_res = self.client.auth.admin.create_user(attributes={
@@ -433,12 +473,12 @@ class SupabaseService:
                 "user_metadata": {"name": name, "role": role}
             })
             if not user_res: return None
-            user_id = user_res.user.id
+            new_user_id = user_res.user.id
             
             # 2. Inserir na tabela pharmacy_users
             res = self.client.table("pharmacy_users").insert({
                 "pharmacy_id": pharmacy_id,
-                "user_id": user_id,
+                "user_id": new_user_id,
                 "name": name,
                 "email": email,
                 "role": role
@@ -449,35 +489,41 @@ class SupabaseService:
             logging.error(f"Erro ao adicionar membro à equipe: {str(e)}")
             return None
 
-    async def delete_pharmacy_user(self, member_id: str):
+    async def delete_pharmacy_user(self, member_id: str, user_id: str):
         try:
-            # Busca o registro para pegar o user_id real
-            user_res = self.client.table("pharmacy_users").select("user_id").eq("id", member_id).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return False
+            
+            # Busca o registro garantindo que pertence à mesma farmácia
+            user_res = self.client.table("pharmacy_users").select("user_id").eq("id", member_id).eq("pharmacy_id", pharmacy_id).execute()
             if not user_res.data: return False
-            user_id = user_res.data[0]["user_id"]
+            member_user_id = user_res.data[0]["user_id"]
             
             # 1. Excluir do Supabase Auth
             try:
-                self.client.auth.admin.delete_user(user_id)
+                self.client.auth.admin.delete_user(member_user_id)
             except Exception as ae:
                 logging.error(f"Erro ao deletar do Supabase Auth: {str(ae)}")
                 
             # 2. Excluir da tabela do banco
-            self.client.table("pharmacy_users").delete().eq("id", member_id).execute()
+            self.client.table("pharmacy_users").delete().eq("id", member_id).eq("pharmacy_id", pharmacy_id).execute()
             return True
         except Exception as e:
             logging.error(f"Erro ao excluir membro da equipe: {str(e)}")
             return False
 
-    async def update_pharmacy_user_password(self, member_id: str, password_plain: str):
+    async def update_pharmacy_user_password(self, member_id: str, password_plain: str, user_id: str):
         try:
-            # Busca o registro do membro
-            user_res = self.client.table("pharmacy_users").select("user_id").eq("id", member_id).execute()
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id: return False
+            
+            # Busca o registro garantindo que pertence à mesma farmácia
+            user_res = self.client.table("pharmacy_users").select("user_id").eq("id", member_id).eq("pharmacy_id", pharmacy_id).execute()
             if not user_res.data: return False
-            user_id = user_res.data[0]["user_id"]
+            member_user_id = user_res.data[0]["user_id"]
             
             # Atualiza no Supabase Auth
-            self.client.auth.admin.update_user_by_id(user_id, {"password": password_plain})
+            self.client.auth.admin.update_user_by_id(member_user_id, {"password": password_plain})
             return True
         except Exception as e:
             logging.error(f"Erro ao alterar senha do membro: {str(e)}")

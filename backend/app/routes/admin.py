@@ -153,11 +153,11 @@ async def get_instance_status_route(instance_name: str = None):
         raise HTTPException(status_code=500, detail="Erro ao buscar status")
 
 @router.get("/dashboard/stats")
-async def get_stats():
+async def get_stats(user_id: str = Depends(get_current_user)):
     try:
-        stats = await supabase_service.get_dashboard_stats()
-        recent = await supabase_service.get_recent_triages()
-        history = await supabase_service.get_historical_triages()
+        stats = await supabase_service.get_dashboard_stats(user_id)
+        recent = await supabase_service.get_recent_triages(user_id)
+        history = await supabase_service.get_historical_triages(user_id)
         return {
             "stats": stats,
             "recent_activity": recent,
@@ -168,9 +168,9 @@ async def get_stats():
         raise HTTPException(status_code=500, detail="Erro ao buscar estatísticas")
 
 @router.get("/dashboard/clients")
-async def get_clients():
+async def get_clients(user_id: str = Depends(get_current_user)):
     try:
-        clients = await supabase_service.get_unique_clients()
+        clients = await supabase_service.get_unique_clients(user_id)
         return clients
     except Exception as e:
         logging.error(f"Erro ao buscar clientes: {str(e)}")
@@ -180,19 +180,19 @@ class ShiftData(BaseModel):
     shift_date: str
 
 @router.get("/shifts")
-async def list_shifts():
-    return await supabase_service.get_pharmacy_shifts()
+async def list_shifts(user_id: str = Depends(get_current_user)):
+    return await supabase_service.get_pharmacy_shifts(user_id)
 
 @router.post("/shifts")
-async def create_shift(data: ShiftData):
-    res = await supabase_service.add_pharmacy_shift(data.shift_date)
+async def create_shift(data: ShiftData, user_id: str = Depends(get_current_user)):
+    res = await supabase_service.add_pharmacy_shift(data.shift_date, user_id)
     if not res:
         raise HTTPException(status_code=500, detail="Erro ao adicionar plantão")
     return res
 
 @router.delete("/shifts/{shift_id}")
-async def remove_shift(shift_id: str):
-    res = await supabase_service.delete_pharmacy_shift(shift_id)
+async def remove_shift(shift_id: str, user_id: str = Depends(get_current_user)):
+    res = await supabase_service.delete_pharmacy_shift(shift_id, user_id)
     return {"status": "success", "deleted": res}
 
 class AISettings(BaseModel):
@@ -205,12 +205,12 @@ class AISettings(BaseModel):
     meta_waba_id: str = None
 
 @router.get("/pharmacy/settings")
-async def get_settings():
-    return await supabase_service.get_pharmacy_settings()
+async def get_settings(user_id: str = Depends(get_current_user)):
+    return await supabase_service.get_pharmacy_settings(user_id)
 
 @router.put("/pharmacy/settings")
-async def update_settings(data: AISettings):
-    res = await supabase_service.update_pharmacy_settings(data.dict())
+async def update_settings(data: AISettings, user_id: str = Depends(get_current_user)):
+    res = await supabase_service.update_pharmacy_settings(data.dict(), user_id)
     if not res: raise HTTPException(status_code=500, detail="Erro ao salvar configs")
     return res
 
@@ -240,8 +240,8 @@ class PasswordData(BaseModel):
     new_password: str
 
 @router.post("/security/change-password")
-async def change_password(data: PasswordData):
-    res = await supabase_service.update_user_password(data.new_password)
+async def change_password(data: PasswordData, user_id: str = Depends(get_current_user)):
+    res = await supabase_service.update_user_password(data.new_password, user_id)
     if not res: raise HTTPException(status_code=500, detail="Erro ao alterar senha")
     return {"status": "success"}
 
@@ -331,14 +331,14 @@ class UserPasswordData(BaseModel):
     new_password: str
 
 @router.get("/users")
-async def list_team_members():
+async def list_team_members(user_id: str = Depends(get_current_user)):
     """
     Retorna a lista de todos os usuários/balconistas da farmácia ativa
     """
-    return await supabase_service.list_pharmacy_users()
+    return await supabase_service.list_pharmacy_users(user_id)
 
 @router.post("/users")
-async def add_team_member(data: UserCreateData):
+async def add_team_member(data: UserCreateData, user_id: str = Depends(get_current_user)):
     """
     Cria um novo funcionário (Supabase Auth + public.pharmacy_users)
     """
@@ -346,28 +346,29 @@ async def add_team_member(data: UserCreateData):
         name=data.name,
         email=data.email,
         password_plain=data.password,
-        role=data.role
+        role=data.role,
+        user_id=user_id
     )
     if not res:
         raise HTTPException(status_code=500, detail="Erro ao criar funcionário no servidor.")
     return res
 
 @router.delete("/users/{member_id}")
-async def remove_team_member(member_id: str):
+async def remove_team_member(member_id: str, user_id: str = Depends(get_current_user)):
     """
     Remove o funcionário e exclui sua conta de acesso
     """
-    success = await supabase_service.delete_pharmacy_user(member_id)
+    success = await supabase_service.delete_pharmacy_user(member_id, user_id)
     if not success:
         raise HTTPException(status_code=500, detail="Erro ao remover funcionário do servidor.")
     return {"status": "success", "message": "Funcionário excluído."}
 
 @router.post("/users/{member_id}/change-password")
-async def change_member_password(member_id: str, data: UserPasswordData):
+async def change_member_password(member_id: str, data: UserPasswordData, user_id: str = Depends(get_current_user)):
     """
     Altera de forma administrativa a senha de login do balconista/gerente
     """
-    success = await supabase_service.update_pharmacy_user_password(member_id, data.new_password)
+    success = await supabase_service.update_pharmacy_user_password(member_id, data.new_password, user_id)
     if not success:
         raise HTTPException(status_code=500, detail="Erro ao alterar senha do funcionário.")
     return {"status": "success", "message": "Senha do funcionário atualizada."}
