@@ -120,7 +120,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
     try:
         # Busca a farmácia do usuário
         res = supabase_service.client.table("pharmacies") \
-            .select("name, nome_responsavel, email, razao_social") \
+            .select("name, razao_social, nome_responsavel, email") \
             .eq("owner_id", user_id) \
             .limit(1) \
             .execute()
@@ -128,9 +128,10 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
         if res.data:
             data = res.data[0]
             return {
-                "name": data.get("name"),
-                "nome_responsavel": data.get("nome_responsavel") or data.get("razao_social"),
-                "email": data.get("email")
+                "name": data.get("name") or "",
+                "razao_social": data.get("razao_social") or "",
+                "nome_responsavel": data.get("nome_responsavel") or "",
+                "email": data.get("email") or ""
             }
 
         # Fallback de Autoreparação: se a farmácia provisória não foi criada no registro (ex. race condition),
@@ -138,7 +139,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
         logging.warning(f"Nenhuma farmácia provisória encontrada para o owner {user_id}. Executando auto-reparação...")
         user_res = supabase_service.client.auth.admin.get_user_by_id(user_id)
         if user_res and user_res.user:
-            name = user_res.user.user_metadata.get("name") or user_res.user.email.split("@")[0]
+            responsible_name = user_res.user.user_metadata.get("name") or ""
             email = user_res.user.email
             
             try:
@@ -157,9 +158,9 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
                 import secrets
                 # 2. Inserir farmácia pendente
                 supabase_service.client.table("pharmacies").insert({
-                    "name": name,
-                    "razao_social": name,
-                    "nome_responsavel": name,
+                    "name": "",                  # Em branco para o usuário preencher
+                    "razao_social": "",          # Em branco para o usuário preencher
+                    "nome_responsavel": responsible_name,  # Nome cadastrado = Nome do Responsável!
                     "cnpj": f"T-PEND-{secrets.token_hex(4).upper()}",
                     "address": "Aguardando preenchimento comercial",
                     "city_id": default_city_id,
@@ -172,8 +173,9 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
                 logging.error(f"Erro de banco durante auto-reparação: {str(db_e)}")
 
             return {
-                "name": name,
-                "nome_responsavel": name,
+                "name": "",
+                "razao_social": "",
+                "nome_responsavel": responsible_name,
                 "email": email
             }
 

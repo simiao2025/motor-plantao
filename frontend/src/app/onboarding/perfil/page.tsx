@@ -83,9 +83,9 @@ export default function OnboardingPerfil() {
           setFormData((prev) => ({
             ...prev,
             name: prefill.name || "",
+            razao_social: prefill.razao_social || "",
             nome_responsavel: prefill.nome_responsavel || "",
             email: prefill.email || "",
-            razao_social: prefill.name || prefill.nome_responsavel || "", // Fallback
           }));
         }
       } catch (err) {
