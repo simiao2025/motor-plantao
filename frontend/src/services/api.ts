@@ -30,7 +30,7 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}) {
   
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...options.headers,
+    ...(options.headers as Record<string, string>),
   };
   
   if (token) {
