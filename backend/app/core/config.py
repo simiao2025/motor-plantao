@@ -23,11 +23,11 @@ class Settings(BaseSettings):
     # AI Config
     LLM_PROVIDER: str = "openai" # "openai" ou "groq"
     LLM_MODEL: str = "gpt-4o"
-    OPENAI_API_KEY: SecretStr = Field(default=None)
-    GROQ_API_KEY: SecretStr = Field(default=None)
+    OPENAI_API_KEY: SecretStr = SecretStr("")
+    GROQ_API_KEY: SecretStr = SecretStr("")
 
     # Email / Resend
-    RESEND_API_KEY: str = None
+    RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
 
     # Security
