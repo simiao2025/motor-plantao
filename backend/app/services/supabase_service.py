@@ -17,7 +17,7 @@ class SupabaseService:
             key = settings.SUPABASE_SERVICE_ROLE_KEY.get_secret_value() if settings.SUPABASE_SERVICE_ROLE_KEY else ""
             if not url or not key:
                 logging.error("Supabase credentials missing! Please configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
-                raise ValueError("Supabase credentials missing. Check environment variables.")
+            self._client = create_client(url, key)
         return self._client
 
     async def get_user_pharmacy_id(self, user_id: str) -> str:

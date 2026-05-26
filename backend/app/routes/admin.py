@@ -19,7 +19,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         return user_res.user.id
     except Exception as e:
         logging.error(f"Erro ao validar token JWT: {str(e)}")
-        raise HTTPException(status_code=401, detail=f"Acesso não autorizado: {str(e)} (type: {type(e).__name__})")
+        raise HTTPException(status_code=401, detail="Acesso não autorizado")
 
 class PharmacyRegistration(BaseModel):
     cnpj: str
