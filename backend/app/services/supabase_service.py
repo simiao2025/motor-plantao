@@ -330,20 +330,44 @@ class SupabaseService:
         try:
             import secrets
             # 1. Criar o usuário no Supabase Auth com a role de owner no metadata
-            user_res = self.client.auth.admin.create_user(attributes={
-                "email": email,
-                "password": password_plain,
-                "email_confirm": True,
-                "user_metadata": {"name": name, "role": "owner"}
-            })
-            if not user_res:
+            user_id = None
+            try:
+                user_res = self.client.auth.admin.create_user(attributes={
+                    "email": email,
+                    "password": password_plain,
+                    "email_confirm": True,
+                    "user_metadata": {"name": name, "role": "owner"}
+                })
+                if user_res and user_res.user:
+                    user_id = user_res.user.id
+            except Exception as auth_e:
+                error_msg = str(auth_e)
+                if "already been registered" in error_msg:
+                    # Condição de corrida: O usuário já foi criado em uma requisição concorrente (duplo clique)
+                    logging.info(f"Usuário {email} já existia (provável duplo clique). Buscando ID...")
+                    # Busca o ID do usuário existente
+                    existing_users = self.client.auth.admin.list_users()
+                    for u in existing_users:
+                        if u.email == email:
+                            user_id = u.id
+                            break
+                if not user_id:
+                    logging.error(f"Erro Auth ao criar usuário: {error_msg}")
+                    return None
+            
+            if not user_id:
                 return None
-            user_id = user_res.user.id
             
             # 2. Buscar cidade padrão
             city_res = self.client.table("cities").select("id").limit(1).execute()
             default_city_id = city_res.data[0]["id"] if city_res.data else None
             
+            # Verificar se já existe farmácia para este dono (Condição de Corrida)
+            existing_pharmacy = self.client.table("pharmacies").select("id").eq("owner_id", user_id).execute()
+            if existing_pharmacy.data:
+                logging.info(f"Farmácia já existia para o owner {user_id}. Considerando sucesso.")
+                return user_id
+
             # 3. Inserir farmácia pendente vinculada ao novo proprietário
             res = self.client.table("pharmacies").insert({
                 "name": name,
@@ -363,13 +387,17 @@ class SupabaseService:
             pharmacy_id = res.data[0]["id"]
             
             # 4. Vincular o criador (Proprietário) na tabela pharmacy_users
-            self.client.table("pharmacy_users").insert({
-                "pharmacy_id": pharmacy_id,
-                "user_id": user_id,
-                "name": name,
-                "email": email,
-                "role": "owner"
-            }).execute()
+            # Usa upsert ou ignora erro se já existir
+            try:
+                self.client.table("pharmacy_users").insert({
+                    "pharmacy_id": pharmacy_id,
+                    "user_id": user_id,
+                    "name": name,
+                    "email": email,
+                    "role": "owner"
+                }).execute()
+            except Exception as pu_err:
+                logging.warning(f"Aviso ao vincular pharmacy_user (talvez já exista): {pu_err}")
             
             return user_id
         except Exception as e:
