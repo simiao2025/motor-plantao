@@ -23,6 +23,9 @@ export default function QRCodeDisplay({ instanceName, onConnected }: QRCodeDispl
       const data = await pharmacyApi.getQRCode(instanceName);
       if (data.base64) {
         setQrCode(data.base64);
+      } else if (data.connected) {
+        setStatus("connected");
+        if (onConnected) onConnected();
       } else if (data.status === "error") {
         setError(data.message || "Erro na Evolution API ao obter QR Code.");
       } else {

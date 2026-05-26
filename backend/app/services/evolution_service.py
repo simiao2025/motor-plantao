@@ -98,6 +98,19 @@ class EvolutionService:
                 logging.info(f"Buscando QR Code v3 para: {instance_name}")
                 response = await client.get(url, params=params, headers=headers)
                 
+                # Se a sessão já estiver conectada, retorna sucesso amigável (v3 Go)
+                if response.status_code == 400:
+                    try:
+                        err_data = response.json()
+                        if "already logged in" in err_data.get("error", "").lower():
+                            logging.info(f"Instância {instance_name} já está conectada no Evolution Go v3.")
+                            return {
+                                "status": "success",
+                                "connected": True
+                            }
+                    except Exception:
+                        pass
+
                 # Se der 404, tentamos o formato v2 (Node)
                 if response.status_code == 404:
                     logging.info(f"GET /instance/qr falhou (404), tentando fallback v2 para: {instance_name}")
@@ -107,6 +120,21 @@ class EvolutionService:
                         "Content-Type": "application/json"
                     }
                     response_v2 = await client.get(url_v2, headers=headers_v2)
+                    
+                    # Trata sessão já logada no fallback v2
+                    if response_v2.status_code == 400:
+                        try:
+                            err_data = response_v2.json()
+                            err_msg = err_data.get("message", "") or err_data.get("error", "")
+                            if "already" in str(err_msg).lower():
+                                logging.info(f"Instância {instance_name} já conectada (fallback v2).")
+                                return {
+                                    "status": "success",
+                                    "connected": True
+                                }
+                        except Exception:
+                            pass
+                            
                     response_v2.raise_for_status()
                     data_v2 = response_v2.json()
                     return {
@@ -254,12 +282,19 @@ class EvolutionService:
                     }
                     response_v2 = await client.get(url_v2, headers=headers_v2)
                     if response_v2.status_code == 200:
-                        return response_v2.json()
+                        res_json = response_v2.json()
+                        instance_data = res_json.get("instance", {})
+                        state = instance_data.get("state") or instance_data.get("status")
+                        if state in ["open", "connected", "CONNECTED", "OPEN"]:
+                            return {"instance": {"state": "connected"}}
+                        return res_json
                     return {"instance": {"state": "disconnected"}}
                 
                 if response.status_code == 200:
                     data = response.json()
-                    is_connected = data.get("data", {}).get("connected", False)
+                    inner_data = data.get("data", {})
+                    # Evolution Go v3 case-insensitive check (Connected/connected)
+                    is_connected = inner_data.get("Connected") or inner_data.get("connected") or False
                     state_str = "connected" if is_connected else "disconnected"
                     return {
                         "instance": {
