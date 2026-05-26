@@ -61,19 +61,30 @@ function LoginContent() {
       }
 
       // 2. Buscar o perfil para verificar se o onboarding foi preenchido
+      // Usa o token da sessão recém-criada diretamente (evita race condition com getSession)
+      const accessToken = data?.session?.access_token;
       try {
-        const profile = await pharmacyApi.getProfile();
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const profileRes = await fetch(`${API_BASE_URL}/admin/pharmacy/profile`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { "Authorization": `Bearer ${accessToken}` } : {}),
+          },
+        });
         
-        if (!profile || Object.keys(profile).length === 0 || profile.profile_completed === false) {
-          // Perfil vazio ou incompleto → envia para Onboarding comercial
-          router.push("/onboarding/perfil");
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          if (!profile || Object.keys(profile).length === 0 || profile.profile_completed === false) {
+            router.push("/onboarding/perfil");
+          } else {
+            router.push("/dashboard");
+          }
         } else {
-          // Acesso livre ao painel
-          router.push("/dashboard");
+          // API retornou erro (401, 500, etc.) → usuário novo → onboarding
+          router.push("/onboarding/perfil");
         }
       } catch (profileErr: any) {
         console.error("Erro ao verificar onboarding:", profileErr);
-        // Se der 401 ou qualquer erro de perfil, é usuário novo → onboarding
         router.push("/onboarding/perfil");
       }
     } catch (err: any) {
