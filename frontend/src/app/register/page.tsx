@@ -50,7 +50,7 @@ export default function Register() {
               Confirme seu E-mail!
             </h1>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Enviamos um e-mail de confirmação de segurança para <strong className="text-emerald-400 font-bold">{formData.email}</strong> via Resend.com.
+              Enviamos um e-mail de confirmação de segurança para <strong className="text-emerald-400 font-bold">{formData.email}</strong>.
             </p>
           </div>
 
