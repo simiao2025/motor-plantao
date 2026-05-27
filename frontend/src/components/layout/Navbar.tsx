@@ -6,7 +6,11 @@ import { pharmacyApi } from "@/services/api";
 import { Bell, Menu, Search, UserCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-export function Navbar() {
+interface NavbarProps {
+  onToggleMenu?: () => void;
+}
+
+export function Navbar({ onToggleMenu }: NavbarProps) {
   const [userName, setUserName] = useState("Dr. Admin");
   const [userRole, setUserRole] = useState("Gestor");
   const [pharmacyName, setPharmacyName] = useState("");
@@ -105,7 +109,11 @@ export function Navbar() {
   return (
     <header className="h-20 border-b border-white/5 bg-bg/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between px-8">
       <div className="flex items-center gap-4">
-        <button className="md:hidden text-muted hover:text-white transition-colors">
+        <button 
+          onClick={onToggleMenu}
+          className="md:hidden text-slate-300 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-lg cursor-pointer"
+          aria-label="Abrir menu"
+        >
           <Menu className="w-6 h-6" />
         </button>
         <div className="hidden md:flex items-center gap-2 bg-s2/50 border border-white/5 rounded-full px-4 py-2 w-64 focus-within:border-rose-500/50 focus-within:bg-s2 transition-all">
