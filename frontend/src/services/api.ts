@@ -70,6 +70,14 @@ export const pharmacyApi = {
   addShift: (date: string) => apiFetch("/admin/shifts", { method: "POST", body: JSON.stringify({ shift_date: date }) }),
   deleteShift: (id: string) => apiFetch(`/admin/shifts/${id}`, { method: "DELETE" }),
   
+  // --- CRM ---
+  getCRMBoard: () => apiFetch("/admin/crm/board"),
+  updateDealStage: (dealId: string, status: string) => 
+    apiFetch(`/admin/crm/deals/${dealId}/stage`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    }),
+  
   getSettings: () => apiFetch("/admin/pharmacy/settings"),
   updateSettings: (data: { 
     system_prompt?: string; 

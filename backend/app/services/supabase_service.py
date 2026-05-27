@@ -530,4 +530,132 @@ class SupabaseService:
             logging.error(f"Erro ao alterar senha do membro: {str(e)}")
             return False
 
+    # --- CRM SERVICES ---
+    async def get_crm_board(self, user_id: str):
+        try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id:
+                return {}
+            
+            # Busca todas as oportunidades ativas com dados dos pacientes e responsáveis associados
+            res = self.client.table("crm_deals") \
+                .select("id, status, triage_level, value, notes, created_at, patients(id, name, phone), pharmacy_users(id, name)") \
+                .eq("pharmacy_id", pharmacy_id) \
+                .execute()
+            
+            # Agrupa negócios por status do funil
+            stages = {
+                "lead": [],
+                "triaged": [],
+                "waiting_pharmacist": [],
+                "completed": [],
+                "lost": []
+            }
+            
+            for deal in res.data or []:
+                status = deal.get("status", "lead")
+                if status in stages:
+                    stages[status].append({
+                        "id": deal["id"],
+                        "triage_level": deal["triage_level"],
+                        "value": float(deal["value"]) if deal.get("value") else 0.0,
+                        "notes": deal["notes"],
+                        "created_at": deal["created_at"],
+                        "patient": deal.get("patients") or {},
+                        "assigned_agent": deal.get("pharmacy_users") or {}
+                    })
+            return stages
+        except Exception as e:
+            logging.error(f"Erro ao obter quadro CRM: {str(e)}")
+            return {}
+
+    async def update_deal_stage(self, deal_id: str, status: str, user_id: str):
+        try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id:
+                return None
+                
+            # Garante que pertence ao tenant
+            res = self.client.table("crm_deals").update({
+                "status": status,
+                "updated_at": "now()"
+            }).eq("id", deal_id).eq("pharmacy_id", pharmacy_id).execute()
+            
+            if res.data:
+                # Cria interação auditável
+                deal = res.data[0]
+                self.client.table("crm_interactions").insert({
+                    "pharmacy_id": pharmacy_id,
+                    "patient_id": deal["patient_id"],
+                    "deal_id": deal["id"],
+                    "type": "status_change",
+                    "description": f"Estágio do negócio atualizado para '{status}'"
+                }).execute()
+                return deal
+            return None
+        except Exception as e:
+            logging.error(f"Erro ao atualizar estágio do negócio {deal_id}: {str(e)}")
+            return None
+
+    async def get_patient_history(self, patient_id: str, user_id: str):
+        try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id:
+                return {}
+                
+            # Busca perfil
+            pat = self.client.table("patients").select("*").eq("id", patient_id).eq("pharmacy_id", pharmacy_id).limit(1).execute()
+            if not pat.data:
+                return {}
+                
+            # Busca interações cronológicas
+            inter = self.client.table("crm_interactions").select("id, type, description, created_at, pharmacy_users(name)") \
+                .eq("patient_id", patient_id) \
+                .order("created_at", desc=True) \
+                .execute()
+                
+            return {
+                "profile": pat.data[0],
+                "timeline": inter.data or []
+            }
+        except Exception as e:
+            logging.error(f"Erro ao carregar histórico do paciente {patient_id}: {str(e)}")
+            return {}
+
+    async def update_deal_value(self, deal_id: str, value: float, user_id: str):
+        try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id:
+                return None
+            res = self.client.table("crm_deals").update({
+                "value": value,
+                "updated_at": "now()"
+            }).eq("id", deal_id).eq("pharmacy_id", pharmacy_id).execute()
+            return res.data[0] if res.data else None
+        except Exception as e:
+            logging.error(f"Erro ao atualizar valor do negócio {deal_id}: {str(e)}")
+            return None
+
+    async def add_patient_note(self, patient_id: str, description: str, user_id: str):
+        try:
+            pharmacy_id = await self.get_user_pharmacy_id(user_id)
+            if not pharmacy_id:
+                return None
+                
+            # Busca o ID de usuário do atendente associado na tabela pharmacy_users
+            u_res = self.client.table("pharmacy_users").select("id").eq("user_id", user_id).limit(1).execute()
+            agent_id = u_res.data[0]["id"] if u_res.data else None
+            
+            res = self.client.table("crm_interactions").insert({
+                "pharmacy_id": pharmacy_id,
+                "patient_id": patient_id,
+                "type": "note",
+                "description": description,
+                "created_by": agent_id
+            }).execute()
+            return res.data[0] if res.data else None
+        except Exception as e:
+            logging.error(f"Erro ao gravar nota do paciente {patient_id}: {str(e)}")
+            return None
+
 supabase_service = SupabaseService()
