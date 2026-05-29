@@ -1,7 +1,7 @@
 from app.routes.admin import router as admin_router
+from app.routes.crm import router as crm_router
 from app.routes.payments import router as payment_router
 from app.routes.webhooks import router as webhook_router
-from app.routes.crm import router as crm_router
 from fastapi import APIRouter
 
 api_router = APIRouter()

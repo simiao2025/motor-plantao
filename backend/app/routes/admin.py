@@ -3,8 +3,8 @@ import logging
 from app.core.config import settings
 from app.services.evolution_service import evolution_service
 from app.services.supabase_service import supabase_service
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -38,8 +38,12 @@ class PharmacyRegistration(BaseModel):
 @router.post("/pharmacy/finalize-onboarding")
 async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends(get_current_user)):
     """
-    Recebe dados do perfil, cria instância no Evolution e salva no banco.
+    Recebe dados do perfil, cria instância no Evolution e salva no banco com tratamento de rollback.
     """
+    pharmacy_created = False
+    pharmacy_id = None
+    instance_created = False
+    
     try:
         logging.info(f"Finalizando onboarding para CNPJ: {data.cnpj}")
 
@@ -50,7 +54,13 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
             .execute()
 
         # 2. Tratar Cidade (Busca ou Cria)
-        slug = data.city_name.lower().replace(" ", "-")
+        import unicodedata
+        def generate_slug(text: str) -> str:
+            normalized = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('utf-8')
+            slugified = normalized.lower().strip().replace(" ", "-")
+            return "".join(c for c in slugified if c.isalnum() or c == "-")
+
+        slug = generate_slug(data.city_name)
         city_res = supabase_service.client.table("cities").select("id").eq("slug", slug).execute()
 
         if city_res.data:
@@ -77,16 +87,22 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
                 "address": data.address,
                 "city_id": city_id
             }).execute()
-            
+
             if not new_pharmacy.data:
                 raise HTTPException(status_code=500, detail="Não foi possível criar o registro da farmácia no banco.")
             pharmacy_id = new_pharmacy.data[0]["id"]
+            pharmacy_created = True
 
         # 4. Criar Instância na Evolution
         evo_res = await evolution_service.create_instance(data.cnpj)
 
         if evo_res.get("status") == "error":
+            # Se a farmácia foi criada nessa transação, deleta-a (rollback)
+            if pharmacy_created and pharmacy_id:
+                supabase_service.client.table("pharmacies").delete().eq("id", pharmacy_id).execute()
             raise HTTPException(status_code=500, detail=f"Erro na Evolution: {evo_res.get('message')}")
+
+        instance_created = True
 
         # 5. Configurar Webhook Automaticamente
         webhook_url = f"{settings.PUBLIC_URL}/webhooks/whatsapp"
@@ -100,6 +116,9 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
 
         result = await supabase_service.finalize_pharmacy_onboarding(pharmacy_id, final_data)
 
+        if not result:
+            raise HTTPException(status_code=500, detail="Falha ao salvar dados de onboarding final no Supabase.")
+
         return {
             "status": "success",
             "message": "Onboarding finalizado e instância provisionada.",
@@ -107,9 +126,38 @@ async def finalize_onboarding(data: PharmacyRegistration, user_id: str = Depends
             "instance": data.cnpj
         }
     except HTTPException as he:
+        # Rollback se der erro
+        if instance_created:
+            logging.warning(f"Realizando rollback da instância Evolution {data.cnpj} devido a erro subsequente.")
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    headers = {"apikey": settings.EVOLUTION_GLOBAL_API_KEY.get_secret_value()}
+                    await client.delete(f"{evolution_service.base_url}/instance/delete/{data.cnpj}", headers=headers)
+            except Exception as delete_err:
+                logging.error(f"Erro ao deletar instância no rollback: {str(delete_err)}")
+        if pharmacy_created and pharmacy_id:
+            logging.warning(f"Realizando rollback do registro da farmácia {pharmacy_id} devido a erro subsequente.")
+            try:
+                supabase_service.client.table("pharmacies").delete().eq("id", pharmacy_id).execute()
+            except Exception as db_del_err:
+                logging.error(f"Erro ao deletar farmácia no rollback: {str(db_del_err)}")
         raise he
     except Exception as e:
         logging.error(f"Erro inesperado no finalize_onboarding: {str(e)}")
+        if instance_created:
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    headers = {"apikey": settings.EVOLUTION_GLOBAL_API_KEY.get_secret_value()}
+                    await client.delete(f"{evolution_service.base_url}/instance/delete/{data.cnpj}", headers=headers)
+            except Exception as delete_err:
+                logging.error(f"Erro ao deletar instância no rollback: {str(delete_err)}")
+        if pharmacy_created and pharmacy_id:
+            try:
+                supabase_service.client.table("pharmacies").delete().eq("id", pharmacy_id).execute()
+            except Exception as db_del_err:
+                logging.error(f"Erro ao deletar farmácia no rollback: {str(db_del_err)}")
         raise HTTPException(status_code=500, detail=f"Erro interno ao finalizar onboarding: {str(e)}")
 
 @router.get("/pharmacy/pre-fill")
@@ -141,7 +189,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
         if user_res and user_res.user:
             responsible_name = user_res.user.user_metadata.get("name") or ""
             email = user_res.user.email
-            
+
             try:
                 # 1. Buscar cidade padrão ou criar uma padrão caso a tabela esteja vazia
                 city_res = supabase_service.client.table("cities").select("id").limit(1).execute()
@@ -154,7 +202,7 @@ async def get_pre_fill_data(user_id: str = Depends(get_current_user)):
                         "slug": "sao-paulo"
                     }).execute()
                     default_city_id = new_city.data[0]["id"] if new_city.data else None
-                
+
                 import secrets
                 # 2. Inserir farmácia pendente
                 supabase_service.client.table("pharmacies").insert({
@@ -311,11 +359,23 @@ async def register_manual(data: RegisterData):
     Cadastra provisoriamente o usuário e envia e-mail de confirmação via Resend.
     """
     import secrets
+
     from app.services.email_service import email_service
     try:
+        # 0. Verificar se o e-mail já existe ativamente no Supabase Auth para evitar spam e sequestro de contas
+        try:
+            existing = supabase_service.client.table("users").schema("auth").select("id").eq("email", data.email).execute()
+            if existing.data:
+                raise HTTPException(status_code=400, detail="Este e-mail já está cadastrado no sistema.")
+        except HTTPException as he:
+            raise he
+        except Exception as db_e:
+            logging.warning(f"Falha ao checar e-mail no schema auth: {str(db_e)}")
+            # Continua se for um erro de permissão ou rede, para não bloquear o cadastro legítimo
+
         # 1. Gerar token seguro
         token = secrets.token_urlsafe(32)
-        
+
         # 2. Salvar dados provisórios
         res = await supabase_service.save_pending_confirmation(
             name=data.name,
@@ -325,7 +385,7 @@ async def register_manual(data: RegisterData):
         )
         if not res:
             raise HTTPException(status_code=500, detail="Erro ao processar dados de registro.")
-            
+
         # 3. Disparar e-mail de ativação via Resend
         email_sent = await email_service.send_verification_email(
             email=data.email,
@@ -335,7 +395,7 @@ async def register_manual(data: RegisterData):
         if not email_sent:
             # Não falha o fluxo inteiro, mas avisa
             logging.warning(f"Resend não conseguiu enviar e-mail para {data.email}")
-            
+
         return {
             "status": "success",
             "message": "Registro iniciado. E-mail de confirmação disparado!"
@@ -355,7 +415,7 @@ async def confirm_email(token: str):
         pending = await supabase_service.get_pending_confirmation_by_token(token)
         if not pending:
             return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=token_invalid")
-            
+
         # 2. Criar usuário e farmácia
         user_id = await supabase_service.create_user_after_confirmation(
             name=pending["name"],
@@ -364,10 +424,10 @@ async def confirm_email(token: str):
         )
         if not user_id:
             return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=auth_failed")
-            
+
         # 3. Limpar pendência
         await supabase_service.delete_pending_confirmation(pending["email"])
-        
+
         # 4. Redirecionar para login do frontend
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?confirmed=true")
     except Exception as e:

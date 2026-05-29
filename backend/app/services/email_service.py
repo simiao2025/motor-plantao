@@ -1,6 +1,8 @@
 import logging
+
 import httpx
 from app.core.config import settings
+
 
 class EmailService:
     async def _send_resend_email(self, to_email: str, subject: str, html_content: str) -> bool:
@@ -36,10 +38,10 @@ class EmailService:
                 "subject": subject,
                 "html": html_content
             }
-            
+
             async with httpx.AsyncClient() as client:
                 res = await client.post(url, json=payload, headers=headers, timeout=10.0)
-                
+
             if res.status_code in [200, 201]:
                 logging.info(f"E-mail enviado via Resend para {to_email} com ID: {res.json().get('id')}")
                 return True
@@ -55,9 +57,9 @@ class EmailService:
         Dispara e-mail de boas-vindas com a senha provisória de acesso (Fluxo Kiwify).
         """
         access_link = f"{settings.PUBLIC_URL}/login" if settings.PUBLIC_URL != "https://your-public-url.com" else "http://localhost:3000/login"
-        
+
         subject = f"Bem-vindo ao {settings.APP_NAME}, {name}!"
-        
+
         html_content = f"""
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
             <div style="text-align: center; margin-bottom: 24px;">
@@ -93,7 +95,7 @@ class EmailService:
             </p>
         </div>
         """
-        
+
         return await self._send_resend_email(email, subject, html_content)
 
     async def send_verification_email(self, email: str, name: str, token: str):
@@ -101,9 +103,9 @@ class EmailService:
         Dispara e-mail de ativação de conta com link seguro após registro manual.
         """
         confirm_link = f"{settings.PUBLIC_URL}/admin/auth/confirm-email?token={token}" if settings.PUBLIC_URL != "https://your-public-url.com" else f"http://localhost:8000/admin/auth/confirm-email?token={token}"
-        
+
         subject = f"Confirme sua conta no {settings.APP_NAME}"
-        
+
         html_content = f"""
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
             <div style="text-align: center; margin-bottom: 24px;">
@@ -134,7 +136,7 @@ class EmailService:
             </p>
         </div>
         """
-        
+
         return await self._send_resend_email(email, subject, html_content)
 
 email_service = EmailService()

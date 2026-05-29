@@ -1,5 +1,8 @@
 import logging
+import base64
+import hashlib
 from datetime import date
+from cryptography.fernet import Fernet
 
 from app.core.config import settings
 
@@ -9,6 +12,16 @@ from supabase import Client, create_client
 class SupabaseService:
     def __init__(self):
         self._client: Client = None
+        self._fernet: Fernet = None
+
+    def _get_fernet(self) -> Fernet:
+        if self._fernet is None:
+            secret = settings.SECRET_KEY.get_secret_value()
+            # Deriva uma chave de 32 bytes em base64 determinística usando SHA256 do segredo
+            key_32 = hashlib.sha256(secret.encode()).digest()
+            key_b64 = base64.urlsafe_b64encode(key_32)
+            self._fernet = Fernet(key_b64)
+        return self._fernet
 
     @property
     def client(self) -> Client:
@@ -30,12 +43,12 @@ class SupabaseService:
             res = self.client.table("pharmacies").select("id").eq("owner_id", user_id).limit(1).execute()
             if res.data:
                 return res.data[0]["id"]
-            
+
             # 2. Verifica se é membro da equipe (pharmacy_users)
             res = self.client.table("pharmacy_users").select("pharmacy_id").eq("user_id", user_id).limit(1).execute()
             if res.data:
                 return res.data[0]["pharmacy_id"]
-            
+
             return None
         except Exception as e:
             logging.error(f"Erro ao buscar farmácia do usuário {user_id}: {str(e)}")
@@ -108,13 +121,13 @@ class SupabaseService:
                 }
             today = date.today().isoformat()
             res = self.client.table("ai_context_logs").select("id, triage_level, user_phone").eq("pharmacy_id", pharmacy_id).gte("created_at", today).execute()
-            
+
             logs = res.data
             total_triagens = len(logs)
             criticos = sum(1 for log in logs if log.get("triage_level") == "VERMELHO")
             verdes = sum(1 for log in logs if log.get("triage_level") == "VERDE")
             pacientes_unicos = len(set(log["user_phone"] for log in logs if log.get("user_phone")))
-            
+
             return {
                 "total_triagens": total_triagens,
                 "criticos": criticos,
@@ -279,7 +292,7 @@ class SupabaseService:
         try:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id: return None
-            
+
             res = self.client.table("pharmacies").update({
                 "system_prompt": data.get("system_prompt"),
                 "rag_base": data.get("rag_base"),
@@ -308,7 +321,7 @@ class SupabaseService:
             pharm = self.client.table("pharmacies").select("id").eq("owner_id", user_id).limit(1).execute()
             if not pharm.data: return None
             pharmacy_id = pharm.data[0]["id"]
-            
+
             res = self.client.table("pharmacies").update({
                 "name": data.get("name"),
                 "razao_social": data.get("razao_social"),
@@ -340,11 +353,15 @@ class SupabaseService:
         try:
             # Garante que não haja tokens duplicados ou e-mails pendentes
             self.client.table("pending_confirmations").delete().eq("email", email).execute()
-            
+
+            # Criptografa a senha de forma segura com Fernet
+            fernet = self._get_fernet()
+            password_encrypted = fernet.encrypt(password_plain.encode()).decode()
+
             res = self.client.table("pending_confirmations").insert({
                 "name": name,
                 "email": email,
-                "password": password_plain,
+                "password": password_encrypted,
                 "token": token
             }).execute()
             return res.data[0] if res.data else None
@@ -374,12 +391,21 @@ class SupabaseService:
         """
         try:
             import secrets
+            
+            # Decripta a senha de forma segura se ela estiver encriptada
+            try:
+                fernet = self._get_fernet()
+                password_decrypted = fernet.decrypt(password_plain.encode()).decode()
+            except Exception:
+                # Fallback de retrocompatibilidade caso a senha antiga esteja em plain text
+                password_decrypted = password_plain
+
             # 1. Criar o usuário no Supabase Auth com a role de owner no metadata
             user_id = None
             try:
                 user_res = self.client.auth.admin.create_user(attributes={
                     "email": email,
-                    "password": password_plain,
+                    "password": password_decrypted,
                     "email_confirm": True,
                     "user_metadata": {"name": name, "role": "owner"}
                 })
@@ -390,23 +416,33 @@ class SupabaseService:
                 if "already been registered" in error_msg:
                     # Condição de corrida: O usuário já foi criado em uma requisição concorrente (duplo clique)
                     logging.info(f"Usuário {email} já existia (provável duplo clique). Buscando ID...")
-                    # Busca o ID do usuário existente
-                    existing_users = self.client.auth.admin.list_users()
-                    for u in existing_users:
-                        if u.email == email:
-                            user_id = u.id
-                            break
+                    
+                    # 1. Busca rápida indexada direto no schema auth via service role
+                    try:
+                        res_auth = self.client.table("users").schema("auth").select("id").eq("email", email).execute()
+                        if res_auth.data:
+                            user_id = res_auth.data[0]["id"]
+                    except Exception as auth_db_err:
+                        logging.warning(f"Não foi possível buscar na tabela auth.users: {str(auth_db_err)}")
+                    
+                    # 2. Fallback seguro caso a query direta falhe
+                    if not user_id:
+                        existing_users = self.client.auth.admin.list_users()
+                        for u in existing_users:
+                            if u.email == email:
+                                user_id = u.id
+                                break
                 if not user_id:
                     logging.error(f"Erro Auth ao criar usuário: {error_msg}")
                     return None
-            
+
             if not user_id:
                 return None
-            
+
             # 2. Buscar cidade padrão
             city_res = self.client.table("cities").select("id").limit(1).execute()
             default_city_id = city_res.data[0]["id"] if city_res.data else None
-            
+
             # Verificar se já existe farmácia para este dono (Condição de Corrida)
             existing_pharmacy = self.client.table("pharmacies").select("id").eq("owner_id", user_id).execute()
             if existing_pharmacy.data:
@@ -425,12 +461,12 @@ class SupabaseService:
                 "email": email,
                 "profile_completed": False
             }).execute()
-            
+
             if not res.data:
                 return None
-            
+
             pharmacy_id = res.data[0]["id"]
-            
+
             # 4. Vincular o criador (Proprietário) na tabela pharmacy_users
             # Usa upsert ou ignora erro se já existir
             try:
@@ -443,7 +479,7 @@ class SupabaseService:
                 }).execute()
             except Exception as pu_err:
                 logging.warning(f"Aviso ao vincular pharmacy_user (talvez já exista): {pu_err}")
-            
+
             return user_id
         except Exception as e:
             logging.error(f"Erro ao criar usuário e farmácia pós-confirmação: {str(e)}")
@@ -454,7 +490,7 @@ class SupabaseService:
         try:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id: return []
-            
+
             res = self.client.table("pharmacy_users").select("*").eq("pharmacy_id", pharmacy_id).order("created_at", desc=False).execute()
             return res.data
         except Exception as e:
@@ -465,7 +501,7 @@ class SupabaseService:
         try:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id: return None
-            
+
             # 1. Criar no Supabase Auth com metadata de perfil
             user_res = self.client.auth.admin.create_user(attributes={
                 "email": email,
@@ -475,7 +511,7 @@ class SupabaseService:
             })
             if not user_res: return None
             new_user_id = user_res.user.id
-            
+
             # 2. Inserir na tabela pharmacy_users
             res = self.client.table("pharmacy_users").insert({
                 "pharmacy_id": pharmacy_id,
@@ -484,7 +520,7 @@ class SupabaseService:
                 "email": email,
                 "role": role
             }).execute()
-            
+
             return res.data[0] if res.data else None
         except Exception as e:
             logging.error(f"Erro ao adicionar membro à equipe: {str(e)}")
@@ -494,18 +530,18 @@ class SupabaseService:
         try:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id: return False
-            
+
             # Busca o registro garantindo que pertence à mesma farmácia
             user_res = self.client.table("pharmacy_users").select("user_id").eq("id", member_id).eq("pharmacy_id", pharmacy_id).execute()
             if not user_res.data: return False
             member_user_id = user_res.data[0]["user_id"]
-            
+
             # 1. Excluir do Supabase Auth
             try:
                 self.client.auth.admin.delete_user(member_user_id)
             except Exception as ae:
                 logging.error(f"Erro ao deletar do Supabase Auth: {str(ae)}")
-                
+
             # 2. Excluir da tabela do banco
             self.client.table("pharmacy_users").delete().eq("id", member_id).eq("pharmacy_id", pharmacy_id).execute()
             return True
@@ -517,12 +553,12 @@ class SupabaseService:
         try:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id: return False
-            
+
             # Busca o registro garantindo que pertence à mesma farmácia
             user_res = self.client.table("pharmacy_users").select("user_id").eq("id", member_id).eq("pharmacy_id", pharmacy_id).execute()
             if not user_res.data: return False
             member_user_id = user_res.data[0]["user_id"]
-            
+
             # Atualiza no Supabase Auth
             self.client.auth.admin.update_user_by_id(member_user_id, {"password": password_plain})
             return True
@@ -536,13 +572,13 @@ class SupabaseService:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id:
                 return {}
-            
+
             # Busca todas as oportunidades ativas com dados dos pacientes e responsáveis associados
             res = self.client.table("crm_deals") \
                 .select("id, status, triage_level, value, notes, created_at, patients(id, name, phone), pharmacy_users(id, name)") \
                 .eq("pharmacy_id", pharmacy_id) \
                 .execute()
-            
+
             # Agrupa negócios por status do funil
             stages = {
                 "lead": [],
@@ -551,7 +587,7 @@ class SupabaseService:
                 "completed": [],
                 "lost": []
             }
-            
+
             for deal in res.data or []:
                 status = deal.get("status", "lead")
                 if status in stages:
@@ -574,13 +610,13 @@ class SupabaseService:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id:
                 return None
-                
+
             # Garante que pertence ao tenant
             res = self.client.table("crm_deals").update({
                 "status": status,
                 "updated_at": "now()"
             }).eq("id", deal_id).eq("pharmacy_id", pharmacy_id).execute()
-            
+
             if res.data:
                 # Cria interação auditável
                 deal = res.data[0]
@@ -602,18 +638,18 @@ class SupabaseService:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id:
                 return {}
-                
+
             # Busca perfil
             pat = self.client.table("patients").select("*").eq("id", patient_id).eq("pharmacy_id", pharmacy_id).limit(1).execute()
             if not pat.data:
                 return {}
-                
+
             # Busca interações cronológicas
             inter = self.client.table("crm_interactions").select("id, type, description, created_at, pharmacy_users(name)") \
                 .eq("patient_id", patient_id) \
                 .order("created_at", desc=True) \
                 .execute()
-                
+
             return {
                 "profile": pat.data[0],
                 "timeline": inter.data or []
@@ -641,11 +677,11 @@ class SupabaseService:
             pharmacy_id = await self.get_user_pharmacy_id(user_id)
             if not pharmacy_id:
                 return None
-                
+
             # Busca o ID de usuário do atendente associado na tabela pharmacy_users
             u_res = self.client.table("pharmacy_users").select("id").eq("user_id", user_id).limit(1).execute()
             agent_id = u_res.data[0]["id"] if u_res.data else None
-            
+
             res = self.client.table("crm_interactions").insert({
                 "pharmacy_id": pharmacy_id,
                 "patient_id": patient_id,

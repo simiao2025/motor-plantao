@@ -1,7 +1,8 @@
 import logging
-from app.services.supabase_service import supabase_service
+
 from app.routes.admin import get_current_user
-from fastapi import APIRouter, HTTPException, Depends
+from app.services.supabase_service import supabase_service
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/crm", tags=["CRM"])

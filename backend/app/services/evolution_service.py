@@ -1,4 +1,5 @@
 import logging
+
 import httpx
 from app.core.config import settings
 from app.services.supabase_service import supabase_service
@@ -12,27 +13,43 @@ class EvolutionService:
             "Content-Type": "application/json"
         }
 
+    async def _get_instance_token(self, instance_name: str) -> str:
+        """Busca o token da instância no banco ou usa fallback."""
+        instance_token = settings.SECRET_KEY.get_secret_value()[:16]
+        try:
+            res_db = supabase_service.client.table("pharmacies") \
+                .select("evolution_apikey") \
+                .eq("instance_name", instance_name) \
+                .limit(1) \
+                .execute()
+            if res_db.data and res_db.data[0].get("evolution_apikey"):
+                return res_db.data[0]["evolution_apikey"]
+        except Exception as db_err:
+            logging.error(f"Erro ao buscar apikey da instância: {str(db_err)}")
+        return instance_token
+
     async def create_instance(self, instance_name: str):
         """
         Cria uma nova instância no Evolution API Go usando o CNPJ como nome.
         Suporta tanto a Evolution API v2 (Node) quanto a v3 (Go).
         """
         url = f"{self.base_url}/instance/create"
-        
-        # Payload contendo campos de ambos os formatos (v2 e v3) para compatibilidade universal
+
+        # Payload otimizado para Evolution API v3 (Go)
+        # Evolution Go exige a chave 'name' (não instanceName) e tokens únicos por instância.
+        unique_token = f"{instance_name}-{settings.SECRET_KEY.get_secret_value()[:6]}"
         payload = {
-            "instanceName": instance_name, # v2
-            "name": instance_name,         # v3
-            "token": settings.SECRET_KEY.get_secret_value()[:16], # Ambas
-            "qrcode": True,
-            "number": ""
+            "instanceName": instance_name,
+            "token": unique_token,
+            "qrcode": True
         }
 
         async with httpx.AsyncClient() as client:
+            response = None
             try:
                 logging.info(f"Provisionando instância Evolution para: {instance_name}")
                 response = await client.post(url, json=payload, headers=self.headers)
-                
+
                 # Se a instância já existe
                 if response.status_code in [400, 409, 500] and "exists" in response.text.lower():
                     logging.info(f"Instância {instance_name} já existe na Evolution.")
@@ -41,17 +58,12 @@ class EvolutionService:
                         "instance_key": payload["token"],
                         "status": "success"
                     }
-                
+
                 response.raise_for_status()
                 data = response.json()
 
-                # Coleta a key nos formatos v2 e v3
-                instance_key = (
-                    data.get("data", {}).get("token") or # v3 (Go)
-                    data.get("hash", {}).get("apikey") or # v2 (Node)
-                    data.get("instance", {}).get("apikey") or # v2 alt
-                    payload["token"] # fallback
-                )
+                # Na v3 o token retornado pode variar, mas o que enviamos é o garantido.
+                instance_key = payload["token"]
 
                 return {
                     "instance_name": instance_name,
@@ -61,7 +73,7 @@ class EvolutionService:
             except Exception as e:
                 logging.error(f"Erro ao criar instância na Evolution: {str(e)}")
                 # Fallback em caso de erros de rede ou se o erro indica que já existe
-                if "already exists" in str(e).lower() or (hascall_res := locals().get("response")) and hascall_res.status_code == 500 and "exists" in hascall_res.text.lower():
+                if "already exists" in str(e).lower() or (response and response.status_code == 500 and "exists" in response.text.lower()):
                     return {
                         "instance_name": instance_name,
                         "instance_key": payload["token"],
@@ -71,22 +83,10 @@ class EvolutionService:
 
     async def get_qrcode(self, instance_name: str):
         """Obtém o QR Code para conexão, compatível com v2 e v3."""
-        # Para v3 (Go), usamos GET /instance/qr
-        url = f"{self.base_url}/instance/qr"
+        url = f"{self.base_url}/instance/qr" # v3 (Go)
         params = {"name": instance_name}
-        
-        # A Evolution Go exige o token da instância para autenticar chamadas de instância
-        instance_token = settings.SECRET_KEY.get_secret_value()[:16]
-        try:
-            res_db = supabase_service.client.table("pharmacies") \
-                .select("evolution_apikey") \
-                .eq("instance_name", instance_name) \
-                .limit(1) \
-                .execute()
-            if res_db.data and res_db.data[0].get("evolution_apikey"):
-                instance_token = res_db.data[0]["evolution_apikey"]
-        except Exception as db_err:
-            logging.error(f"Erro ao buscar apikey da instância para QR Code: {str(db_err)}")
+
+        instance_token = await self._get_instance_token(instance_name)
 
         headers = {
             "apikey": instance_token,
@@ -97,7 +97,7 @@ class EvolutionService:
             try:
                 logging.info(f"Buscando QR Code v3 para: {instance_name}")
                 response = await client.get(url, params=params, headers=headers)
-                
+
                 # Se a sessão já estiver conectada, retorna sucesso amigável (v3 Go)
                 if response.status_code == 400:
                     try:
@@ -113,14 +113,14 @@ class EvolutionService:
 
                 # Se der 404, tentamos o formato v2 (Node)
                 if response.status_code == 404:
-                    logging.info(f"GET /instance/qr falhou (404), tentando fallback v2 para: {instance_name}")
+                    logging.info(f"GET /instance/{{name}}/qrcode falhou (404), tentando fallback v2 para: {instance_name}")
                     url_v2 = f"{self.base_url}/instance/connect/{instance_name}"
                     headers_v2 = {
                         "apikey": settings.EVOLUTION_GLOBAL_API_KEY.get_secret_value(),
                         "Content-Type": "application/json"
                     }
                     response_v2 = await client.get(url_v2, headers=headers_v2)
-                    
+
                     # Trata sessão já logada no fallback v2
                     if response_v2.status_code == 400:
                         try:
@@ -134,20 +134,23 @@ class EvolutionService:
                                 }
                         except Exception:
                             pass
-                            
+
                     response_v2.raise_for_status()
                     data_v2 = response_v2.json()
                     return {
                         "base64": data_v2.get("code") or data_v2.get("base64"),
                         "status": "success"
                     }
-                
+
                 response.raise_for_status()
                 data = response.json()
-                
-                # O formato v3 retorna em data['data']['Qrcode']
-                qrcode_base64 = data.get("data", {}).get("Qrcode")
-                
+
+                # O formato v3 retorna em data['qrcode']['base64'] ou data['data']['Qrcode']
+                qrcode_base64 = (
+                    data.get("qrcode", {}).get("base64") or
+                    data.get("data", {}).get("Qrcode")
+                )
+
                 return {
                     "base64": qrcode_base64,
                     "status": "success"
@@ -164,18 +167,8 @@ class EvolutionService:
             "enabled": True,
             "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE"]
         }
-        
-        instance_token = settings.SECRET_KEY.get_secret_value()[:16]
-        try:
-            res_db = supabase_service.client.table("pharmacies") \
-                .select("evolution_apikey") \
-                .eq("instance_name", instance_name) \
-                .limit(1) \
-                .execute()
-            if res_db.data and res_db.data[0].get("evolution_apikey"):
-                instance_token = res_db.data[0]["evolution_apikey"]
-        except Exception:
-            pass
+
+        instance_token = await self._get_instance_token(instance_name)
 
         headers = {
             "apikey": instance_token,
@@ -188,9 +181,9 @@ class EvolutionService:
                 if response.status_code == 404:
                     # Na Evolution Go v3, o webhook é configurado globalmente pelo servidor,
                     # então ignoramos a configuração per-instance graciosamente.
-                    logging.info(f"Webhook set retornou 404 (Evolution Go v3). Ignorando configuração manual.")
+                    logging.info("Webhook set retornou 404 (Evolution Go v3). Ignorando configuração manual.")
                     return {"status": "success", "message": "Webhook globally configured (Evolution Go v3)"}
-                
+
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -209,18 +202,8 @@ class EvolutionService:
             "delay": 1200,
             "linkPreview": True
         }
-        
-        instance_token = settings.SECRET_KEY.get_secret_value()[:16]
-        try:
-            res_db = supabase_service.client.table("pharmacies") \
-                .select("evolution_apikey") \
-                .eq("instance_name", instance_name) \
-                .limit(1) \
-                .execute()
-            if res_db.data and res_db.data[0].get("evolution_apikey"):
-                instance_token = res_db.data[0]["evolution_apikey"]
-        except Exception:
-            pass
+
+        instance_token = await self._get_instance_token(instance_name)
 
         headers = {
             "apikey": instance_token,
@@ -230,7 +213,7 @@ class EvolutionService:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(url, json=payload, headers=headers)
-                
+
                 # Se der 404, tentamos o formato v2 (Node)
                 if response.status_code == 404:
                     url_v2 = f"{self.base_url}/message/sendText/{instance_name}"
@@ -240,7 +223,7 @@ class EvolutionService:
                     }
                     response_v2 = await client.post(url_v2, json=payload, headers=headers_v2)
                     return response_v2.json()
-                
+
                 return response.json()
             except Exception as e:
                 logging.error(f"Erro ao enviar mensagem pela Evolution: {str(e)}")
@@ -251,18 +234,8 @@ class EvolutionService:
         # Para v3 (Go), usamos GET /instance/status
         url = f"{self.base_url}/instance/status"
         params = {"name": instance_name}
-        
-        instance_token = settings.SECRET_KEY.get_secret_value()[:16]
-        try:
-            res_db = supabase_service.client.table("pharmacies") \
-                .select("evolution_apikey") \
-                .eq("instance_name", instance_name) \
-                .limit(1) \
-                .execute()
-            if res_db.data and res_db.data[0].get("evolution_apikey"):
-                instance_token = res_db.data[0]["evolution_apikey"]
-        except Exception:
-            pass
+
+        instance_token = await self._get_instance_token(instance_name)
 
         headers = {
             "apikey": instance_token,
@@ -272,7 +245,7 @@ class EvolutionService:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(url, params=params, headers=headers)
-                
+
                 # Se der 404, tentamos o formato v2 (Node)
                 if response.status_code == 404:
                     url_v2 = f"{self.base_url}/instance/connectionState/{instance_name}"
@@ -289,13 +262,15 @@ class EvolutionService:
                             return {"instance": {"state": "connected"}}
                         return res_json
                     return {"instance": {"state": "disconnected"}}
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     inner_data = data.get("data", {})
-                    # Evolution Go v3 case-insensitive check (Connected/connected)
+                    # Evolution Go v3 requires the session to be both Connected (container running) AND LoggedIn (paired)
                     is_connected = inner_data.get("Connected") or inner_data.get("connected") or False
-                    state_str = "connected" if is_connected else "disconnected"
+                    is_logged_in = inner_data.get("LoggedIn") or inner_data.get("loggedIn") or False
+
+                    state_str = "connected" if (is_connected and is_logged_in) else "disconnected"
                     return {
                         "instance": {
                             "state": state_str

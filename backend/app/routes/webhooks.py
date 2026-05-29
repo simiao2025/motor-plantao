@@ -1,5 +1,6 @@
 import logging
 
+from app.core.config import settings
 from app.services.evolution_service import evolution_service
 from app.services.supabase_service import supabase_service
 from fastapi import APIRouter, Header, Request
@@ -9,14 +10,18 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 @router.post("/payment")
 async def marketplace_webhook(
     request: Request,
-    _x_marketplace_token: str = Header(None)
+    x_marketplace_token: str = Header(None)
 ):
     """
     Recebe a confirmação de pagamento do marketplace.
     """
-    # 1. Validar token de segurança (SDD/Cybersecurity)
-    # if x_marketplace_token != settings.MARKETPLACE_WEBHOOK_TOKEN:
-    #     raise HTTPException(status_code=403, detail="Invalid token")
+    import os
+    from fastapi import HTTPException
+    
+    # 1. Validar token de segurança (SDD/Cybersecurity) se estiver configurado
+    expected_token = os.environ.get("MARKETPLACE_WEBHOOK_TOKEN")
+    if expected_token and x_marketplace_token != expected_token:
+        raise HTTPException(status_code=403, detail="Invalid marketplace token")
 
     data = await request.json()
     email = data.get("email")
@@ -33,10 +38,19 @@ async def marketplace_webhook(
     return {"message": "Webhook received, processing onboarding"}
 
 @router.post("/whatsapp")
-async def whatsapp_webhook(request: Request):
+async def whatsapp_webhook(
+    request: Request,
+    apikey: str = Header(None)
+):
     """
     Recebe mensagens do WhatsApp via Evolution API e processa com IA.
     """
+    from fastapi import HTTPException
+    
+    # Validar a apikey global para garantir que o request veio da Evolution API legítima
+    global_key = settings.EVOLUTION_GLOBAL_API_KEY.get_secret_value()
+    if not apikey or apikey != global_key:
+        raise HTTPException(status_code=403, detail="Acesso não autorizado: Token de webhook inválido ou ausente.")
     from app.agent.motor import pharmacy_agent
 
     data = await request.json()
