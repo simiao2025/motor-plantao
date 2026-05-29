@@ -43,6 +43,8 @@ class EvolutionService:
             "token": unique_token,
             "qrcode": True
         }
+        
+        logging.info(f"Payload do Evolution v3 montado: {payload}")
 
         async with httpx.AsyncClient() as client:
             response = None
