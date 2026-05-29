@@ -59,7 +59,10 @@ class EvolutionService:
                         "status": "success"
                     }
 
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    error_details = response.text
+                    logging.error(f"Evolution API HTTP {response.status_code}: {error_details}")
+                    return {"status": "error", "message": f"Evolution error {response.status_code}: {error_details}"}
                 data = response.json()
 
                 # Na v3 o token retornado pode variar, mas o que enviamos é o garantido.
