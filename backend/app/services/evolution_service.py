@@ -39,7 +39,7 @@ class EvolutionService:
         # Evolution Go exige a chave 'name' (não instanceName) e tokens únicos por instância.
         unique_token = f"{instance_name}-{settings.SECRET_KEY.get_secret_value()[:6]}"
         payload = {
-            "instanceName": instance_name,
+            "name": instance_name,
             "token": unique_token,
             "qrcode": True
         }
