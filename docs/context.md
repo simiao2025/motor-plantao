@@ -10,3 +10,8 @@
 - DB: Supabase (PostgreSQL)
 - AI: LangChain (GPT-4o)
 - Frontend: Next.js 15
+
+## Evolution API v3 (Go) - Regras Estritas
+- O payload de `/instance/create` deve OBRIGATORIAMENTE conter a chave `name` (e NÃO `instanceName`).
+- O envio de campos legados (como `integration: WHATSAPP-BAILEYS` ou `instanceName`) causará HTTP 500 Internal Server Error.
+- Exemplo seguro e validado de criação de instância: `{"name": "id", "token": "token", "qrcode": true}`.

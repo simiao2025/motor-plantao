@@ -35,8 +35,13 @@ class EvolutionService:
         """
         url = f"{self.base_url}/instance/create"
 
-        # Payload otimizado para Evolution API v3 (Go)
-        # Evolution Go exige a chave 'name' (não instanceName) e tokens únicos por instância.
+        # =========================================================================================
+        # 🚨 ATENÇÃO (NÃO ALTERE ESTE PAYLOAD SEM LER ISSO) 🚨
+        # Este payload foi exaustivamente debugado para a EVOLUTION API GO (v3).
+        # A v3 exige ESTRITAMENTE a chave 'name'.
+        # NÃO adicione 'instanceName' nem 'integration: WHATSAPP-BAILEYS'.
+        # Adicionar chaves do legado (v2) causa um HTTP 500 Internal Server Error na Evolution Go.
+        # =========================================================================================
         unique_token = f"{instance_name}-{settings.SECRET_KEY.get_secret_value()[:6]}"
         payload = {
             "name": instance_name,
